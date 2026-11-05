@@ -86,8 +86,16 @@ drop policy if exists docs_insert on public.docs;
 drop policy if exists docs_update on public.docs;
 drop policy if exists audit_read  on public.audit;
 create policy docs_read   on public.docs  for select to authenticated using (public.is_allowed());
-create policy docs_insert on public.docs  for insert to authenticated with check (public.is_allowed());
-create policy docs_update on public.docs  for update to authenticated using (public.is_allowed()) with check (public.is_allowed());
+-- La configuration (équipe = qui est qui, date de démarrage) n'est modifiable que par l'administrateur :
+-- sinon un membre pourrait s'associer au nom d'Ali et valider ses décisions.
+create or replace function public.is_admin() returns boolean
+language sql stable as $$
+  select coalesce(lower(auth.jwt() ->> 'email') = 'belkhodja.brahim@live.fr', false)
+$$;
+create policy docs_insert on public.docs  for insert to authenticated
+  with check (public.is_allowed() and (col <> 'config' or public.is_admin()));
+create policy docs_update on public.docs  for update to authenticated
+  using (public.is_allowed()) with check (public.is_allowed() and (col <> 'config' or public.is_admin()));
 create policy audit_read  on public.audit for select to authenticated using (public.is_allowed());
 
 -- 6. Mises à jour en direct (Realtime) sur la table docs

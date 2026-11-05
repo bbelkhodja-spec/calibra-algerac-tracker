@@ -9,7 +9,11 @@ const DOSSIER=[['P4-12','FOR 04 – Renseignements techniques'],['P4-22','FOR 04
 let S={},J={},CFG={launch:DEFAULT_LAUNCH},EV=[],CM=[],CL={};
 let me='',view='dash',db=null,assets=null,dl=null,loaded=false,canWrite=true,drawer=null,flt={q:'',who:'',ph:'',st:'',k:''},pending=false,blockOpen=false;
 const byId=Object.fromEntries(TASKS.map(t=>[t.id,t]));const JL=Object.fromEntries(JALONS.map(j=>[j.c,j]));
-try{me=localStorage.getItem('alg_me')||''}catch(e){} try{view=localStorage.getItem('alg_view')||'dash'}catch(e){}
+// gated = écran de connexion / refus / erreur affiché : aucun rendu de l'application tant que l'accès n'est pas validé.
+let gated=Store.mode==='live';
+// En mode réel, l'identité vient UNIQUEMENT du compte connecté (jamais du menu ni du navigateur).
+if(Store.mode!=='live'){try{me=localStorage.getItem('alg_me')||''}catch(e){}}
+try{view=localStorage.getItem('alg_view')||'dash'}catch(e){}if(!VIEWS.some(([k])=>k===view))view='dash';
 // dates
 const P=s=>{const [y,m,d]=s.slice(0,10).split('-').map(Number);return Date.UTC(y,m-1,d)};const F=ms=>new Date(ms).toISOString().slice(0,10);
 const addD=(s,n)=>F(P(s)+n*864e5);const addM=(s,n)=>{const d=new Date(P(s)),day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+n);const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();d.setUTCDate(Math.min(day,last));return F(d.getTime())};
@@ -27,7 +31,7 @@ const dpill=()=>'<span class="pill" style="--c:var(--dec);--b:var(--dec-bg)">Dé
 const evOf=id=>EV.filter(e=>e.task===id);const cmOf=id=>CM.filter(c=>c.task===id).sort((a,b)=>a.at<b.at?-1:1);
 const sortDue=(a,b)=>(due(a)||'9999')<(due(b)||'9999')?-1:(due(a)||'9999')>(due(b)||'9999')?1:0;
 function toast(m){const e=document.getElementById('toast');e.textContent=m;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2800)}
-function guard(){if(!db){toast('Base indisponible : modification non enregistrée');return false}if(!me){toast('Choisissez votre nom (menu Utilisateur)');return false}return true}
+function guard(){if(gated||!db){toast('Base indisponible : modification non enregistrée');return false}if(Store.mode==='live'&&(!canWrite||!me)){toast('Lecture seule : votre compte n’est pas encore associé à un membre (Guide › Équipe, administrateur)');return false}if(!me){toast('Choisissez votre nom (menu Utilisateur)');return false}return true}
 async function w(path,data){try{await db.doc(path).set(data);return true}catch(e){toast((e&&e.message)||'Échec de l’enregistrement, réessayez');if(e&&String(e.code).includes('403')){canWrite=false;render()}return false}}
 async function saveTask(id,patch,msg){if(!guard())return;const n=Object.assign({},S[id]||{},patch,{by:me,at:new Date().toISOString()});S[id]=n;render();if(await w('tasks/'+id,n))toast(msg||'Enregistré')}
 // ---------------- views
@@ -75,7 +79,7 @@ function qMini(){const v=CLAUSES.filter(c=>(CL[c.id]||{}).st==='ok').length,r=CL
 function vTasks(mine){
   let L=TASKS.filter(t=>(!mine||t.who===me)&&(!flt.who||t.who===flt.who)&&(!flt.ph||t.p===flt.ph)&&(!flt.k||t.k===flt.k)&&(!flt.st||fk(t)===flt.st||(flt.st==='open'&&open(t)))&&(!flt.q||(t.id+' '+t.t+' '+t.d+' '+t.ref).toLowerCase().includes(flt.q.toLowerCase())));
   if(mine)L.sort((a,b)=>{const o={late:0,blocked:1,doing:2,soon:3,todo:4,wait:5,done:6,na:7};return o[fk(a)]-o[fk(b)]||sortDue(a,b)});
-  let h=mine?head('Mes tâches',me?me+' · '+TEAM[me]+' · triées par priorité (retards d’abord)':'Choisissez votre nom dans le menu Utilisateur'):head('Tâches',TASKS.length+' tâches · cliquez une ligne pour voir l’explication, mettre à jour et joindre des preuves');
+  let h=mine?head('Mes tâches',me?me+' · '+TEAM[me]+' · triées par priorité (retards d’abord)':(Store.mode==='live'?'Votre compte n’est pas encore associé à un membre de l’équipe (administrateur : Guide › Équipe)':'Choisissez votre nom dans le menu Utilisateur')):head('Tâches',TASKS.length+' tâches · cliquez une ligne pour voir l’explication, mettre à jour et joindre des preuves');
   if(mine&&!me)return h;
   h+='<div class="filters"><input id="fq" placeholder="Rechercher (ID, mot-clé, référence)…" value="'+esc(flt.q)+'">'+(mine?'':sel('fwho',[['','Tous les responsables']].concat(Object.keys(TEAM).map(p=>[p,p])),flt.who))+sel('fph',[['','Toutes les phases']].concat(Object.keys(PHASES).map(p=>[p,PHASES[p]])),flt.ph)+sel('fst',[['','Tous les états'],['open','Ouvertes']].concat(Object.keys(FL).map(k=>[k,FL[k][0]])),flt.st)+sel('fk',[['','Tous les types'],['do','Exécution'],['dec','Décision']],flt.k)+'</div>';
   h+='<div class="panel tw"><table><thead><tr><th>ID</th><th>Tâche</th><th>Responsable</th><th>Échéance</th><th>État</th><th>Preuves</th></tr></thead><tbody>'+(L.length?L.map(t=>{const e=evOf(t.id).length,pre=preOpen(t);return'<tr class="click" data-t="'+t.id+'"><td class="mono">'+t.id+'</td><td>'+esc(t.t)+' '+(t.k==='dec'?dpill():'')+'<div class="sub">'+esc(PHASES[t.p])+(pre&&open(t)?' · attend '+pre.id:'')+'</div></td><td>'+t.who+'</td><td class="mono">'+fr(due(t))+'</td><td>'+pill(fk(t))+'</td><td class="mono">'+(e||'—')+'</td></tr>'}).join(''):'<tr><td colspan="6" class="empty">Aucune tâche pour ces filtres.</td></tr>')+'</tbody></table></div><p class="sub">'+L.length+' tâche(s)</p>';
@@ -89,7 +93,7 @@ function vFor041(){let h=head('Questionnaire FOR 04-1','112 exigences ISO/IEC 17
     h+='<details class="ch"><summary><span>'+chs[ch]+'</span><span class="row"><span class="mono">'+dr+'/'+L.length+' rédigées · '+ok+' validées</span>'+(mi?pill('late',mi+' manquant(s)'):'')+'</span></summary>'+L.map(c=>{const r=CL[c.id]||{};return'<div class="clause"><div class="row" style="justify-content:space-between"><b class="mono">'+c.id+' · '+esc(c.sc)+'</b><span class="sub">'+(c.il?'ILAC-P15 : '+esc(c.il):'')+'</span></div><div class="qt">'+esc(c.tx)+'</div><div class="meta">'+sel('qs_'+c.id,Object.entries(QST),r.st||'')+'<input class="fld" style="flex:1 1 220px" id="qr_'+c.id+'" placeholder="Document CALIBRA (ex. PR-06 §5.2)" value="'+esc(r.ref||'')+'"></div><textarea class="fld" id="qt_'+c.id+'" placeholder="Disposition CALIBRA : ce que nous faisons, en 2 à 4 lignes">'+esc(r.txt||'')+'</textarea><div class="row" style="justify-content:space-between"><span class="sub">'+(r.by?'Mis à jour par '+esc(r.by)+' le '+fr(r.at):'')+'</span><button class="btn" data-qsave="'+c.id+'">Enregistrer</button></div></div>'}).join('')+'</details>'});
   return h}
 function vDates(){let h=head('Dates ALGERAC','Saisissez chaque date dès qu’ALGERAC envoie un document ou fixe un rendez-vous : les délais officiels se calculent automatiquement');
-  h+='<div class="grid g2"><div class="panel"><h2>Événements</h2><div class="tw"><table><tbody><tr><td><b>Démarrage du projet</b><div class="sub">Base de toutes les dates planifiées</div></td><td><input type="date" class="fld" id="launch" value="'+CFG.launch+'"></td></tr>'+JALONS.map(j=>'<tr><td><b>'+esc(j.l)+'</b><div class="sub">'+esc(j.s)+' · '+TASKS.filter(t=>t.j===j.c).length+' tâche(s)</div></td><td><input type="date" class="fld" data-j="'+j.c+'" value="'+(J[j.c]||'')+'"></td></tr>').join('')+'</tbody></table></div></div>';
+  h+='<div class="grid g2"><div class="panel"><h2>Événements</h2><div class="tw"><table><tbody><tr><td><b>Démarrage du projet</b><div class="sub">Base de toutes les dates planifiées</div></td><td><input type="date" class="fld" id="launch" value="'+CFG.launch+'"'+(Store.mode==='live'&&!Store.isAdmin()?' disabled title="Réservé à l’administrateur"':'')+'></td></tr>'+JALONS.map(j=>'<tr><td><b>'+esc(j.l)+'</b><div class="sub">'+esc(j.s)+' · '+TASKS.filter(t=>t.j===j.c).length+' tâche(s)</div></td><td><input type="date" class="fld" data-j="'+j.c+'" value="'+(J[j.c]||'')+'"></td></tr>').join('')+'</tbody></table></div></div>';
   const D=[['Compléter le dossier (sinon classé)','J02',6,'mois'],['Retourner convention + devis','J04',10,'j'],['Dernier délai après rappel','J05',5,'j'],['Récuser un évaluateur','J06',3,'j'],['Répondre à la revue documentaire','J07',3,'mois'],['Plan FOR 32 reçu au plus tard','J08',-5,'j'],['Renvoyer les FOR 02 + plans d’actions','J10',10,'j'],['FOR 02 après rappel du REE','J11',5,'j'],['Lever tous les écarts (sinon CAS)','J10',6,'mois'],['Rapport d’évaluation attendu','J10',45,'j']];
   h+='<div class="panel"><h2>Délais officiels calculés</h2><div class="tw"><table><thead><tr><th>Obligation</th><th>Règle PRO 12</th><th>Date limite</th><th></th></tr></thead><tbody>'+D.map(([l,j,n,u])=>{const b=J[j],d=b?(u==='mois'?addM(b,n):addD(b,n)):null;return'<tr><td>'+l+'</td><td class="sub">'+j+' '+(n<0?'−':'+')+' '+Math.abs(n)+' '+u+'</td><td class="mono">'+fr(d)+'</td><td>'+(d?(d<TODAY?pill('late','Dépassé'):diff(d,TODAY)<=7?pill('soon',diff(d,TODAY)+' j'):pill('todo',diff(d,TODAY)+' j')):'<span class="sub">en attente</span>')+'</td></tr>'}).join('')+'</tbody></table></div><p class="sub">Jours calendaires (hypothèse à confirmer avec ALGERAC, tâche P0-11).</p>'+(J.J08&&J.J09?'<p>'+(J.J09<=addD(J.J08,-5)?pill('done','FOR 32 reçu dans les délais'):pill('late','FOR 32 reçu trop tard : à signaler au CD/RA'))+'</p>':'')+'</div></div>';return h}
 function vDocs(){const L=EV.slice().sort((a,b)=>a.at<b.at?1:-1);let h=head('Documents & preuves',L.length+' élément(s) joint(s) aux tâches · PDF et images téléversés ici, tous formats téléversés ici, ou référencés par lien');
@@ -118,6 +122,7 @@ function vDrawer(id){const t=byId[id],r=S[id]||{},k=fk(t),s=st(t),pre=preOpen(t)
   return h}
 // render
 function render(){
+  if(gated)return;
   const a=document.activeElement;if(a&&['INPUT','TEXTAREA','SELECT'].includes(a.tagName)&&a.type!=='file'&&a.id!=='me'){pending=true;return}
   pending=false;
   const c=counts(TASKS),mineN=me?TASKS.filter(t=>t.who===me&&['late','blocked','doing','soon'].includes(fk(t))).length:0;
@@ -128,13 +133,15 @@ function render(){
   document.getElementById('drawerHost').innerHTML=drawer&&byId[drawer]?vDrawer(drawer):'';
 }
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pending)render()},0));
-const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;
-meSel.addEventListener('change',()=>{me=meSel.value;try{localStorage.setItem('alg_me',me)}catch(e){}render()});
-document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;go(b.dataset.v)});
-function go(v){view=v;if(v!=='tasks')flt={q:'',who:'',ph:'',st:'',k:''};try{localStorage.setItem('alg_view',view)}catch(e){}render();window.scrollTo(0,0)}
+const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;if(Store.mode==='live')meSel.disabled=true;
+meSel.addEventListener('change',()=>{if(Store.mode==='live'||gated){meSel.value=me;return}me=meSel.value;try{localStorage.setItem('alg_me',me)}catch(e){}render()});
+// Menu : un clic sur un onglet repart toujours de filtres vides (les tuiles du tableau de bord, elles, posent un filtre).
+document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;flt={q:'',who:'',ph:'',st:'',k:''};go(b.dataset.v)});
+function go(v){if(gated)return;view=v;drawer=null;blockOpen=false;if(v!=='tasks')flt={q:'',who:'',ph:'',st:'',k:''};try{localStorage.setItem('alg_view',view)}catch(e){}render();window.scrollTo(0,0)}
 document.body.addEventListener('click',async e=>{
   const k=e.target.closest('[data-go]');if(k){const g=k.dataset.go;flt={q:'',who:'',ph:'',st:'',k:''};if(g==='docs'){go('docs');return}if(g==='f:dec'){flt.k='dec';flt.st='open'}else if(g.startsWith('f:'))flt.st=g.slice(2);go('tasks');return}
-  const ph=e.target.closest('[data-ph]');if(ph){flt={q:'',who:'',ph:ph.dataset.ph,st:'',k:''};view='tasks';render();window.scrollTo(0,0);return}
+  if(gated)return;
+  const ph=e.target.closest('[data-ph]');if(ph){flt={q:'',who:'',ph:ph.dataset.ph,st:'',k:''};go('tasks');return}
   const tr=e.target.closest('[data-t]');if(tr&&!e.target.closest('a')){drawer=tr.dataset.t;blockOpen=false;render();return}
   if(e.target.closest('[data-close]')){drawer=null;blockOpen=false;render();return}
   if(e.target.id==='bk'){backup();return}
@@ -172,13 +179,14 @@ async function backup(){const data=JSON.stringify({exporte_le:new Date().toISOSt
 
 // ---------------- bootstrap (Store) ----------------
 db=Store;
-function gate(html){document.getElementById('main').innerHTML='<div class="panel" style="max-width:560px;margin:40px auto">'+html+'</div>';document.getElementById('nav').innerHTML=''}
+function gate(html){gated=true;drawer=null;blockOpen=false;document.getElementById('drawerHost').innerHTML='';meSel.disabled=true;document.getElementById('main').innerHTML='<div class="panel" style="max-width:560px;margin:40px auto">'+html+'</div>';document.getElementById('nav').innerHTML=''}
 (async()=>{
   const r=await Store.init();
   if(!r.ok){
     if(r.reason==='signin'){gate('<h1>Accréditation ALGERAC</h1><p class="sub" style="margin:8px 0 18px">Espace réservé à l’équipe CALIBRA. Connectez-vous avec votre adresse @calibraes.com et le mot de passe remis par l’administrateur.</p><form id="lf"><input class="fld" id="lem" type="email" autocomplete="username" placeholder="prenom.nom@calibraes.com" style="width:100%;margin-bottom:8px"><input class="fld" id="lpw" type="password" autocomplete="current-password" placeholder="Mot de passe" style="width:100%;margin-bottom:12px"><button class="btn p" type="submit">Se connecter</button> <span class="warn" id="lerr"></span></form>');document.getElementById('lf').onsubmit=async ev=>{ev.preventDefault();const er=document.getElementById('lerr');er.textContent='Connexion…';const m=await Store.signIn(document.getElementById('lem').value,document.getElementById('lpw').value);if(m)er.textContent=m};return}
     if(r.reason==='denied'){gate('<h1>Accès refusé</h1><p style="margin:10px 0">Le compte <b>'+esc(Store.email)+'</b> n’est pas autorisé. Utilisez un compte @calibraes.com.</p><button class="btn" id="so">Changer de compte</button>');document.getElementById('so').onclick=()=>Store.signOut();return}
     gate('<h1>Connexion aux données impossible</h1><p class="warn" style="margin:10px 0">'+esc((r.error&&r.error.message)||'Erreur inconnue')+'</p><p class="sub">Vérifiez votre connexion Internet ou contactez l’administrateur ('+esc(Store.email)+').</p><button class="btn" id="so">Changer de compte</button>');document.getElementById('so').onclick=()=>Store.signOut();return}
+  gated=false;if(Store.mode!=='live')meSel.disabled=false;
   sub=(col,fn)=>db.collection(col).onSnapshot(s=>{fn(s);render()});
   sub('tasks',s=>{S={};s.docs.forEach(d=>S[d.id]=d.data())});
   sub('jalons',s=>{J={};s.docs.forEach(d=>{const x=d.data();if(x&&x.date)J[d.id]=x.date})});
