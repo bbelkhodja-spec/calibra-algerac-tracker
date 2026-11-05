@@ -131,7 +131,7 @@ const change = (w, el, v) => { el.value = v; el.dispatchEvent(new w.Event('chang
     ok(!!d.getElementById('pf'), 'écran « mot de passe » non écrasé par un rafraîchissement'); }
 
   // 4. Compte autorisé mais non associé -> lecture seule
-  { const { w, d, db } = await boot({ live: true, email: 'nabil@calibraes.com', members });
+  { const { w, d, db } = await boot({ live: true, email: 'secretariat@calibraes.com', members });
     w.localStorage.setItem('alg_me', 'Ali');
     click(w, d.querySelector('#nav [data-v="tasks"]')); await tick();
     click(w, d.querySelector('[data-t]')); await tick();
@@ -147,6 +147,21 @@ const change = (w, el, v) => { el.value = v; el.dispatchEvent(new w.Event('chang
     change(w, me, 'Nabil'); await tick();
     click(w, d.querySelector('#nav [data-v="mine"]')); await tick();
     ok(txt(d).includes('Nabil ·'), 'démo : Mes tâches de Nabil'); }
+
+  // 6. Aucune équipe enregistrée : identité déduite du prénom dans l'adresse
+  { const { w, d, db } = await boot({ live: true, email: 'brahim.belkhodja@calibraes.com' });
+    ok(!txt(d).includes('lecture seule'), 'brahim.belkhodja@calibraes.com sans équipe → pas en lecture seule');
+    ok(w.eval('me') === 'Brahim' && w.eval('Store.isAdmin()'), '→ identifié Brahim, administrateur');
+    click(w, d.querySelector('#nav [data-v="guide"]')); await tick();
+    ok(!!d.getElementById('tmsave'), '→ panneau Équipe visible');
+    click(w, d.querySelector('#nav [data-v="tasks"]')); await tick();
+    click(w, d.querySelector('[data-t]')); await tick();
+    click(w, d.querySelector('[data-a="doing"]')); await tick(80);
+    ok(db.rows.some(r => r.col === 'tasks' && r.data && r.data.by === 'Brahim'), '→ peut enregistrer (par « Brahim »)'); }
+  { const { w, d } = await boot({ live: true, email: 'karim.benali@calibraes.com' });
+    ok(w.eval('me') === 'Karim' && !w.eval('Store.isAdmin()') && !txt(d).includes('lecture seule'), 'karim.benali@calibraes.com → Karim, non administrateur'); }
+  { const { w, d } = await boot({ live: true, email: 'contact@calibraes.com' });
+    ok(w.eval('me') === '' && txt(d).includes('contact@calibraes.com n’est associé'), 'contact@calibraes.com → lecture seule, message explicite'); }
 
   console.log(fails ? '\n' + fails + ' ÉCHEC(S)' : '\nTOUS LES TESTS PASSENT');
   process.exit(fails ? 1 : 0);

@@ -90,7 +90,11 @@ create policy docs_read   on public.docs  for select to authenticated using (pub
 -- sinon un membre pourrait s'associer au nom d'Ali et valider ses décisions.
 create or replace function public.is_admin() returns boolean
 language sql stable as $$
-  select coalesce(lower(auth.jwt() ->> 'email') = 'belkhodja.brahim@live.fr', false)
+  select coalesce(
+    lower(auth.jwt() ->> 'email') = 'belkhodja.brahim@live.fr'
+    or (lower(auth.jwt() ->> 'email') like '%@calibraes.com'
+        and 'brahim' = any(regexp_split_to_array(split_part(lower(auth.jwt() ->> 'email'), '@', 1), '[^a-z]+'))),
+    false)
 $$;
 create policy docs_insert on public.docs  for insert to authenticated
   with check (public.is_allowed() and (col <> 'config' or public.is_admin()));

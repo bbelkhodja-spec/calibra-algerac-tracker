@@ -118,7 +118,10 @@
     if ((CFG.admins || []).map(x => x.toLowerCase()).includes(e)) return true;
     return (CFG.allowDomains || []).some(d => e.endsWith('@' + d.toLowerCase()));
   };
-  Store.isAdmin = () => (CFG.admins || []).map(x => x.toLowerCase()).includes(Store.email);
+  // Prénoms contenus dans la partie avant @ (ex. brahim.belkhodja@calibraes.com -> ['brahim','belkhodja'])
+  Store.nameTokens = email => (email || '').toLowerCase().split('@')[0].split(/[^a-z]+/).filter(Boolean);
+  Store.isAdmin = () => (CFG.admins || []).map(x => x.toLowerCase()).includes(Store.email)
+    || (Store.allowed(Store.email) && Store.nameTokens(Store.email).some(t => (CFG.adminFirstNames || []).includes(t)));
   Store.signIn = async (email, password) => {
     const { error } = await sb.auth.signInWithPassword({ email: (email || '').trim(), password: password || '' });
     if (error) return error.message === 'Invalid login credentials' ? 'Adresse ou mot de passe incorrect.' : error.message;

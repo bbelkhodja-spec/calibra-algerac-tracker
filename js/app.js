@@ -127,14 +127,14 @@ function render(){
   pending=false;
   const c=counts(TASKS),mineN=me?TASKS.filter(t=>t.who===me&&['late','blocked','doing','soon'].includes(fk(t))).length:0;
   document.getElementById('nav').innerHTML=VIEWS.map(([k,l])=>'<button data-v="'+k+'"'+(k===view?' aria-current="page"':'')+'><span>'+l+'</span>'+(k==='tasks'&&c.late?'<span class="nbadge r">'+c.late+'</span>':'')+(k==='mine'&&mineN?'<span class="nbadge">'+mineN+'</span>':'')+'</button>').join('');
-  let h='';if(loaded&&!db)h+='<div class="note bad">Base partagée indisponible : vous consultez le plan, mais rien n’est enregistré.</div>';if(!canWrite)h+='<div class="note bad">Accès en lecture seule. Demandez à Brahim le niveau « Contributeur ».</div>';
+  let h='';if(loaded&&!db)h+='<div class="note bad">Base partagée indisponible : vous consultez le plan, mais rien n’est enregistré.</div>';if(!canWrite)h+='<div class="note bad">Accès en lecture seule : le compte '+esc(Store.email)+' n’est associé à aucun membre. L’administrateur l’associe dans Guide › Équipe.</div>';
   h+=({dash:vDash,tasks:()=>vTasks(false),mine:()=>vTasks(true),dossier:vDossier,for041:vFor041,dates:vDates,docs:vDocs,guide:vGuide}[view]||vDash)();
   const m=document.getElementById('main');const open_=[...m.querySelectorAll('details.ch')].map(d=>d.open);m.innerHTML=h;m.querySelectorAll('details.ch').forEach((d,i)=>{if(open_[i])d.open=true});
   document.getElementById('drawerHost').innerHTML=drawer&&byId[drawer]?vDrawer(drawer):'';
 }
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pending)render()},0));
 const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;if(Store.mode==='live'){meSel.disabled=true;meSel.style.display='none';const lb=document.querySelector('label[for=me]');if(lb)lb.style.display='none'}
-const BUILD='20261105-3';{const v=document.createElement('div');v.style.cssText='margin-top:8px;opacity:.6;font-size:11px';v.textContent='Version '+BUILD;document.querySelector('.side-foot').appendChild(v)}
+const BUILD='20261105-4';{const v=document.createElement('div');v.style.cssText='margin-top:8px;opacity:.6;font-size:11px';v.textContent='Version '+BUILD;document.querySelector('.side-foot').appendChild(v)}
 meSel.addEventListener('change',()=>{if(Store.mode==='live'||gated){meSel.value=me;return}me=meSel.value;try{localStorage.setItem('alg_me',me)}catch(e){}render()});
 // Menu : un clic sur un onglet repart toujours de filtres vides (les tuiles du tableau de bord, elles, posent un filtre).
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;flt={q:'',who:'',ph:'',st:'',k:''};go(b.dataset.v)});
@@ -195,7 +195,7 @@ function gate(html){gated=true;drawer=null;blockOpen=false;document.getElementBy
   sub('comments',s=>{CM=s.docs.map(d=>Object.assign({_id:d.id},d.data()))});
   sub('clauses',s=>{CL={};s.docs.forEach(d=>CL[d.id]=d.data())});
   db.doc('config/main').onSnapshot(s=>{const x=s.exists?s.data():null;CFG={launch:(x&&x.launch)||DEFAULT_LAUNCH,members:(x&&x.members)||{}};
-    if(Store.mode==='live'){const m=CFG.members[Store.email]||(Store.isAdmin()?'Brahim':'');me=m;canWrite=!!m;meSel.value=m;meSel.disabled=true}
+    if(Store.mode==='live'){const tk=Store.nameTokens(Store.email),auto=Object.keys(TEAM).find(n=>tk.includes(n.toLowerCase()));const m=CFG.members[Store.email]||auto||(Store.isAdmin()?'Brahim':'');me=m;canWrite=!!m;meSel.value=m;meSel.disabled=true}
     render()});
   Store.onSync(()=>render());
   loaded=true;render();

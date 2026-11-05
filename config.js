@@ -9,5 +9,6 @@ window.TRACKER_CONFIG = {
   supabaseKey: "sb_publishable_uNYZ2umf0-1xG7upz81mUw_hrRTpDPB",
   allowDomains: ["calibraes.com"],
   admins: ["belkhodja.brahim@live.fr"],
+  adminFirstNames: ["brahim"],   // une adresse @calibraes.com contenant ce prénom est administrateur
   pollSeconds: 45
 };
