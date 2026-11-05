@@ -1,0 +1,195 @@
+let sub;
+
+const TEAM={Ali:'DG · Resp. technique Fishing / Thru-tubing',Karim:'Resp. technique Inspection & Audit',Nabil:'Contrôleur financier',Brahim:'Responsable QHSE · Solutions digitales'};
+const DECIDERS=['Ali','Brahim'];const canDecide=t=>t.k!=='dec'||me===t.dk||me==='Ali';
+const DEFAULT_LAUNCH='2026-11-08';
+const VIEWS=[['dash','Tableau de bord'],['tasks','Tâches'],['mine','Mes tâches'],['dossier','Pièces du dossier'],['for041','Questionnaire FOR 04-1'],['dates','Dates ALGERAC'],['docs','Documents & preuves'],['guide','Guide']];
+const QST={'':'Non traité',miss:'Manquant',draft:'En rédaction',done:'Rédigé',ok:'Validé RT'};
+const DOSSIER=[['P4-12','FOR 04 – Renseignements techniques'],['P4-22','FOR 04-1 – Questionnaire renseigné'],['P4-24','Manuel qualité'],['P4-25','Procédures du système de management'],['P4-26','Procédures techniques de la portée'],['P4-27','Liste des documents du SM en vigueur'],['P4-28','Dernier rapport d’audit interne'],['P4-29','Dernier CR de revue de direction'],['P4-30','Liste nominative des inspecteurs'],['P4-31','Liste des équipements de mesure'],['P4-32','Certificats d’étalonnage (GEN 03)'],['P4-33','Police d’assurance'],['P4-34','Liste des sites clients'],['P4-35','Agrément activités réglementées'],['P4-36','Dossier de validation des méthodes'],['P4-37','Spécimen de rapport d’inspection'],['P4-38','Statuts (admin.)'],['P4-39','NIS / NIF (admin.)'],['P4-40','Article d’imposition (admin.)'],['P4-41','Registre de commerce (admin.)'],['P4-42','Chèque frais de candidature (admin.)'],['P4-11','DOC 01 signé']];
+let S={},J={},CFG={launch:DEFAULT_LAUNCH},EV=[],CM=[],CL={};
+let me='',view='dash',db=null,assets=null,dl=null,loaded=false,canWrite=true,drawer=null,flt={q:'',who:'',ph:'',st:'',k:''},pending=false,blockOpen=false;
+const byId=Object.fromEntries(TASKS.map(t=>[t.id,t]));const JL=Object.fromEntries(JALONS.map(j=>[j.c,j]));
+try{me=localStorage.getItem('alg_me')||''}catch(e){} try{view=localStorage.getItem('alg_view')||'dash'}catch(e){}
+// dates
+const P=s=>{const [y,m,d]=s.slice(0,10).split('-').map(Number);return Date.UTC(y,m-1,d)};const F=ms=>new Date(ms).toISOString().slice(0,10);
+const addD=(s,n)=>F(P(s)+n*864e5);const addM=(s,n)=>{const d=new Date(P(s)),day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+n);const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();d.setUTCDate(Math.min(day,last));return F(d.getTime())};
+const TODAY=(()=>{const n=new Date();return F(Date.UTC(n.getFullYear(),n.getMonth(),n.getDate()))})();
+const diff=(a,b)=>Math.round((P(a)-P(b))/864e5);const fr=s=>s?s.slice(8,10)+'-'+s.slice(5,7)+'-'+s.slice(0,4):'—';
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const st=t=>(S[t.id]&&S[t.id].s)||'todo';const open=t=>!['done','na'].includes(st(t));
+function start(t){if(t.m==='P')return t.o==null?null:addD(CFG.launch,t.o);return J[t.j]||null}
+function due(t){const o=S[t.id]&&S[t.id].due;if(o)return o;if(t.m==='P'){if(t.o==null||t.n==null)return null;return addD(CFG.launch,t.o+t.n)}const jd=J[t.j];if(!jd||t.dl==null)return null;if(t.u==='mois')return addM(jd,t.dl);if(t.u==='j avant')return addD(jd,-t.dl);return addD(jd,t.dl)}
+const waiting=t=>t.m==='J'&&!J[t.j];const preOpen=t=>t.pre&&byId[t.pre]&&open(byId[t.pre])?byId[t.pre]:null;
+const FL={done:['Terminé','--done','--done-bg'],na:['Non applicable','--wait','--wait-bg'],late:['En retard','--late','--late-bg'],blocked:['Bloqué','--block','--block-bg'],wait:['Attend ALGERAC','--wait','--wait-bg'],doing:['En cours','--doing','--doing-bg'],soon:['Échéance ≤ 7 j','--block','--block-bg'],todo:['À faire','--wait','--wait-bg']};
+function fk(t){const s=st(t);if(s==='done')return'done';if(s==='na')return'na';const d=due(t);if(d&&d<TODAY)return'late';if(s==='blocked')return'blocked';if(waiting(t))return'wait';if(s==='doing')return'doing';if(d&&diff(d,TODAY)<=7)return'soon';return'todo'}
+const pill=(k,txt)=>{const f=FL[k];return '<span class="pill" style="--c:var('+f[1]+');--b:var('+f[2]+')">'+esc(txt||f[0])+'</span>'};
+const dpill=()=>'<span class="pill" style="--c:var(--dec);--b:var(--dec-bg)">Décision</span>';
+const evOf=id=>EV.filter(e=>e.task===id);const cmOf=id=>CM.filter(c=>c.task===id).sort((a,b)=>a.at<b.at?-1:1);
+const sortDue=(a,b)=>(due(a)||'9999')<(due(b)||'9999')?-1:(due(a)||'9999')>(due(b)||'9999')?1:0;
+function toast(m){const e=document.getElementById('toast');e.textContent=m;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2800)}
+function guard(){if(!db){toast('Base indisponible : modification non enregistrée');return false}if(!me){toast('Choisissez votre nom (menu Utilisateur)');return false}return true}
+async function w(path,data){try{await db.doc(path).set(data);return true}catch(e){toast((e&&e.message)||'Échec de l’enregistrement, réessayez');if(e&&String(e.code).includes('403')){canWrite=false;render()}return false}}
+async function saveTask(id,patch,msg){if(!guard())return;const n=Object.assign({},S[id]||{},patch,{by:me,at:new Date().toISOString()});S[id]=n;render();if(await w('tasks/'+id,n))toast(msg||'Enregistré')}
+// ---------------- views
+function head(t,s,r){return '<div class="ptitle"><div><h1>'+t+'</h1><div class="sub">'+s+'</div></div>'+(r||'')+'</div>'}
+function counts(L){const c={};Object.keys(FL).forEach(k=>c[k]=0);L.forEach(t=>c[fk(t)]++);return c}
+function kpi(c,v,l,h,go){return '<button class="kpi" style="--c:var('+c+')" data-go="'+go+'"><span class="v">'+v+'</span><span class="l">'+l+'</span><span class="h">'+h+'</span></button>'}
+function vDash(){
+  const act=TASKS.filter(t=>st(t)!=='na'),c=counts(TASKS),done=c.done,pct=act.length?Math.round(100*done/act.length):0;
+  const decs=TASKS.filter(t=>t.k==='dec'&&open(t)&&!waiting(t)).length;
+  const doneT=TASKS.filter(t=>st(t)==='done'),withEv=doneT.filter(t=>evOf(t.id).length).length;
+  const dep=byId['P5-01'],depD=J.J01||due(dep);
+  let h=head('Tableau de bord','Situation au '+fr(TODAY)+' · '+TASKS.length+' tâches · '+Object.keys(TEAM).length+' responsables');
+  if(!loaded)h+='<div class="note">Connexion à la base partagée…</div>';
+  h+='<div class="kpis">'+kpi('--done',pct+' %','Avancement',done+' / '+act.length+' terminées','all')+kpi('--doing',c.doing,'En cours','tâches démarrées','f:doing')+kpi('--block',c.soon,'Échéance ≤ 7 j','à finir cette semaine','f:soon')+kpi('--late',c.late,'En retard','date limite dépassée','f:late')+kpi('--block',c.blocked,'Bloquées','besoin d’arbitrage','f:blocked')+kpi('--dec',decs,'Décisions','attendent un décideur','f:dec')+kpi('--wait',c.wait,'Attend ALGERAC','démarrent sur événement','f:wait')+kpi('--ink',doneT.length?Math.round(100*withEv/doneT.length)+' %':'—','Preuves','des tâches terminées','docs')+'</div>';
+  h+='<div class="grid g3"><div class="panel"><h2>Calendrier des phases</h2>'+gantt()+'</div><div class="panel"><h2>Prochain jalon : dépôt du dossier</h2><div class="mile"><div><div class="big">'+fr(depD)+'</div><div class="sub">'+(J.J01?'Dossier déposé':'Prévu · '+(depD?diff(depD,TODAY)+' jours restants':''))+'</div></div></div>'+
+    '<div class="sec"><h3>Dossier de dépôt</h3>'+dossierMini()+'</div><div class="sec"><h3>Questionnaire FOR 04-1</h3>'+qMini()+'</div></div></div>';
+  const prob=TASKS.filter(t=>['late','blocked'].includes(fk(t))).sort(sortDue);
+  const soon=TASKS.filter(t=>open(t)&&!waiting(t)&&due(t)&&due(t)>=TODAY&&diff(due(t),TODAY)<=14).sort(sortDue);
+  h+='<div class="grid g2" style="margin-top:16px"><div class="panel"><h2>Points critiques ('+prob.length+')</h2>'+mini(prob,'Aucun retard ni blocage.',true)+'</div><div class="panel"><h2>Échéances des 14 prochains jours ('+soon.length+')</h2>'+mini(soon,'Aucune échéance dans les 14 jours.')+'</div></div>';
+  h+='<div class="grid g2" style="margin-top:16px"><div class="panel"><h2>Avancement par phase</h2>'+phases()+'</div><div class="panel"><h2>Charge par responsable</h2>'+load()+'<div class="sec"><h3>Dernières mises à jour</h3>'+feed()+'</div></div></div>';
+  return h;
+}
+function mini(L,emp,reason){if(!L.length)return'<p class="empty">'+emp+'</p>';return'<div class="tw"><table><thead><tr><th>Tâche</th><th>Resp.</th><th>Échéance</th><th>État</th></tr></thead><tbody>'+L.slice(0,10).map(t=>'<tr class="click" data-t="'+t.id+'"><td><span class="mono">'+t.id+'</span> '+esc(t.t)+(reason&&S[t.id]&&S[t.id].s==='blocked'&&S[t.id].note?'<div class="sub">Motif : '+esc(S[t.id].note)+'</div>':'')+'</td><td>'+t.who+'</td><td class="mono">'+fr(due(t))+'</td><td>'+pill(fk(t))+'</td></tr>').join('')+'</tbody></table></div>'+(L.length>10?'<p class="sub">+ '+(L.length-10)+' autres — voir Tâches</p>':'')}
+function phases(){return'<div class="tw"><table><thead><tr><th>Phase</th><th>Avancement</th><th>Fait</th><th>Alertes</th><th>Fin prévue</th></tr></thead><tbody>'+Object.keys(PHASES).map(p=>{const L=TASKS.filter(t=>t.p===p),a=L.filter(t=>st(t)!=='na'),d=L.filter(t=>st(t)==='done').length,c=counts(L),pc=a.length?Math.round(100*d/a.length):0,ends=L.map(due).filter(Boolean).sort();
+  return'<tr class="click" data-ph="'+p+'"><td>'+esc(PHASES[p])+'</td><td><div class="bar"><i style="width:'+pc+'%"></i></div></td><td class="mono">'+d+'/'+a.length+'</td><td>'+(c.late?pill('late',c.late+' retard'):'')+' '+(c.blocked?pill('blocked',c.blocked+' bloq.'):'')+(c.late||c.blocked?'':'<span class="sub">—</span>')+'</td><td class="mono">'+(ends.length===L.length&&ends.length?fr(ends[ends.length-1]):(c.wait?'<span class="sub">selon ALGERAC</span>':fr(ends[ends.length-1])))+'</td></tr>'}).join('')+'</tbody></table></div>'}
+function load(){return Object.keys(TEAM).map(p=>{const L=TASKS.filter(t=>t.who===p&&st(t)!=='na'),n=L.length||1,c=counts(L);
+  return'<div style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>'+p+'</b><span class="sub">'+TEAM[p]+' · '+c.done+'/'+L.length+(c.late?' · <span class="warn">'+c.late+' en retard</span>':'')+'</span></div><div class="stack">'+['done','doing','late','blocked','todo','soon','wait'].map(k=>c[k]?'<i style="width:'+(100*c[k]/n)+'%;background:var('+FL[k][1]+')"></i>':'').join('')+'</div></div>'}).join('')+'<div class="legend"><span style="--c:var(--done)">Terminé</span><span style="--c:var(--doing)">En cours</span><span style="--c:var(--late)">En retard</span><span style="--c:var(--block)">Bloqué / ≤ 7 j</span><span style="--c:var(--wait)">À faire / attente</span></div>'}
+function feed(){const L=Object.entries(S).filter(([k,v])=>v&&v.at&&byId[k]).sort((a,b)=>a[1].at<b[1].at?1:-1).slice(0,6);if(!L.length)return'<p class="empty">Aucune mise à jour pour l’instant.</p>';return'<div class="feed">'+L.map(([k,v])=>'<div><time>'+fr(v.at)+'</time><span><b>'+esc(v.by||'')+'</b> · '+k+' → '+esc(FL[fk(byId[k])][0])+'</span></div>').join('')+'</div>'}
+function gantt(){
+  const ph=Object.keys(PHASES);const rows=ph.map(p=>{const L=TASKS.filter(t=>t.p===p);const s=L.map(start).filter(Boolean).sort(),e=L.map(due).filter(Boolean).sort();return{p,s:s[0],e:e[e.length-1],c:counts(L),n:L.length}});
+  const ds=rows.flatMap(r=>[r.s,r.e]).filter(Boolean).concat([TODAY]).sort();const a=P(ds[0]),b=P(ds[ds.length-1])+864e5*7;
+  const W=680,L=190,R=10,rh=22,H=rows.length*rh+30,x=d=>L+(P(d)-a)/(b-a)*(W-L-R);
+  let s='<div class="tw"><svg class="gantt" viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Calendrier des phases">';
+  // month ticks
+  let m=new Date(a);m.setUTCDate(1);m.setUTCMonth(m.getUTCMonth()+1);
+  const step=(b-a)/2.6e9>10?2:1;let k=0;
+  while(m.getTime()<b){const X=x(F(m.getTime()));s+='<line x1="'+X+'" x2="'+X+'" y1="0" y2="'+(H-18)+'" stroke="var(--line)"/>'+(k++%step?'':'<text x="'+(X+3)+'" y="'+(H-5)+'">'+['jan','fév','mar','avr','mai','juin','juil','août','sep','oct','nov','déc'][m.getUTCMonth()]+' '+String(m.getUTCFullYear()).slice(2)+'</text>');m.setUTCMonth(m.getUTCMonth()+1)}
+  rows.forEach((r,i)=>{const y=i*rh+4;s+='<text x="0" y="'+(y+12)+'">'+esc(PHASES[r.p].slice(0,32))+'</text>';
+    if(r.s&&r.e){const x1=x(r.s),x2=Math.max(x(r.e),x1+3);const col=r.c.late?'var(--late)':r.c.done===r.n?'var(--done)':'var(--doing)';s+='<rect x="'+x1+'" y="'+(y+3)+'" width="'+(x2-x1)+'" height="12" rx="3" fill="'+col+'" opacity=".85"/>'}
+    else s+='<text x="'+(L+4)+'" y="'+(y+12)+'" style="font-style:italic">dépend des dates ALGERAC</text>'});
+  const T=x(TODAY);s+='<line x1="'+T+'" x2="'+T+'" y1="0" y2="'+(H-18)+'" stroke="var(--brand)" stroke-width="2"/></svg></div>';
+  return s+'<div class="legend"><span style="--c:var(--doing)">Planifié / en cours</span><span style="--c:var(--late)">Contient des retards</span><span style="--c:var(--done)">Terminé</span><span style="--c:var(--brand)">Aujourd’hui</span></div>'}
+function dossierMini(){const n=DOSSIER.length,ok=DOSSIER.filter(([id])=>st(byId[id])==='done').length,ev=DOSSIER.filter(([id])=>evOf(id).length).length;return'<div class="row"><div class="bar" style="flex:1"><i style="width:'+Math.round(100*ok/n)+'%"></i></div><span class="mono">'+ok+'/'+n+'</span></div><div class="sub">'+ev+' pièce(s) avec document joint</div>'}
+function qMini(){const v=CLAUSES.filter(c=>(CL[c.id]||{}).st==='ok').length,r=CLAUSES.filter(c=>['done','ok'].includes((CL[c.id]||{}).st)).length;return'<div class="row"><div class="bar" style="flex:1"><i style="width:'+Math.round(100*v/CLAUSES.length)+'%"></i></div><span class="mono">'+v+'/'+CLAUSES.length+' validées</span></div><div class="sub">'+r+' rédigées ou validées</div>'}
+function vTasks(mine){
+  let L=TASKS.filter(t=>(!mine||t.who===me)&&(!flt.who||t.who===flt.who)&&(!flt.ph||t.p===flt.ph)&&(!flt.k||t.k===flt.k)&&(!flt.st||fk(t)===flt.st||(flt.st==='open'&&open(t)))&&(!flt.q||(t.id+' '+t.t+' '+t.d+' '+t.ref).toLowerCase().includes(flt.q.toLowerCase())));
+  if(mine)L.sort((a,b)=>{const o={late:0,blocked:1,doing:2,soon:3,todo:4,wait:5,done:6,na:7};return o[fk(a)]-o[fk(b)]||sortDue(a,b)});
+  let h=mine?head('Mes tâches',me?me+' · '+TEAM[me]+' · triées par priorité (retards d’abord)':'Choisissez votre nom dans le menu Utilisateur'):head('Tâches',TASKS.length+' tâches · cliquez une ligne pour voir l’explication, mettre à jour et joindre des preuves');
+  if(mine&&!me)return h;
+  h+='<div class="filters"><input id="fq" placeholder="Rechercher (ID, mot-clé, référence)…" value="'+esc(flt.q)+'">'+(mine?'':sel('fwho',[['','Tous les responsables']].concat(Object.keys(TEAM).map(p=>[p,p])),flt.who))+sel('fph',[['','Toutes les phases']].concat(Object.keys(PHASES).map(p=>[p,PHASES[p]])),flt.ph)+sel('fst',[['','Tous les états'],['open','Ouvertes']].concat(Object.keys(FL).map(k=>[k,FL[k][0]])),flt.st)+sel('fk',[['','Tous les types'],['do','Exécution'],['dec','Décision']],flt.k)+'</div>';
+  h+='<div class="panel tw"><table><thead><tr><th>ID</th><th>Tâche</th><th>Responsable</th><th>Échéance</th><th>État</th><th>Preuves</th></tr></thead><tbody>'+(L.length?L.map(t=>{const e=evOf(t.id).length,pre=preOpen(t);return'<tr class="click" data-t="'+t.id+'"><td class="mono">'+t.id+'</td><td>'+esc(t.t)+' '+(t.k==='dec'?dpill():'')+'<div class="sub">'+esc(PHASES[t.p])+(pre&&open(t)?' · attend '+pre.id:'')+'</div></td><td>'+t.who+'</td><td class="mono">'+fr(due(t))+'</td><td>'+pill(fk(t))+'</td><td class="mono">'+(e||'—')+'</td></tr>'}).join(''):'<tr><td colspan="6" class="empty">Aucune tâche pour ces filtres.</td></tr>')+'</tbody></table></div><p class="sub">'+L.length+' tâche(s)</p>';
+  return h}
+function sel(id,opts,v){return'<select id="'+id+'" class="fld">'+opts.map(([k,l])=>'<option value="'+esc(k)+'"'+(k===v?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'}
+function vDossier(){let h=head('Pièces du dossier','DOC 01 Annexe 01 (organismes d’inspection) + pièces administratives — l’état vient de la tâche liée');
+  h+='<div class="panel tw"><table><thead><tr><th>Pièce</th><th>Tâche</th><th>Responsable</th><th>Échéance</th><th>État</th><th>Document joint</th></tr></thead><tbody>'+DOSSIER.map(([id,l])=>{const t=byId[id],e=evOf(id);return'<tr class="click" data-t="'+id+'"><td>'+esc(l)+'</td><td class="mono">'+id+'</td><td>'+t.who+'</td><td class="mono">'+fr(due(t))+'</td><td>'+pill(fk(t))+'</td><td>'+(e.length?'<span class="pill" style="--c:var(--done);--b:var(--done-bg)">'+e.length+' fichier(s)</span>':'<span class="sub">aucun</span>')+'</td></tr>'}).join('')+'</tbody></table></div>';return h}
+function vFor041(){let h=head('Questionnaire FOR 04-1','112 exigences ISO/IEC 17020 · texte ALGERAC Rev 03 · rédigez la disposition CALIBRA et la référence du document');
+  const chs={'4':'4 · Impartialité et confidentialité','5':'5 · Exigences structurelles','6':'6 · Ressources','7':'7 · Processus','8':'8 · Système de management'};
+  Object.keys(chs).forEach(ch=>{const L=CLAUSES.filter(c=>c.ch===ch),ok=L.filter(c=>(CL[c.id]||{}).st==='ok').length,dr=L.filter(c=>['done','ok'].includes((CL[c.id]||{}).st)).length,mi=L.filter(c=>(CL[c.id]||{}).st==='miss').length;
+    h+='<details class="ch"><summary><span>'+chs[ch]+'</span><span class="row"><span class="mono">'+dr+'/'+L.length+' rédigées · '+ok+' validées</span>'+(mi?pill('late',mi+' manquant(s)'):'')+'</span></summary>'+L.map(c=>{const r=CL[c.id]||{};return'<div class="clause"><div class="row" style="justify-content:space-between"><b class="mono">'+c.id+' · '+esc(c.sc)+'</b><span class="sub">'+(c.il?'ILAC-P15 : '+esc(c.il):'')+'</span></div><div class="qt">'+esc(c.tx)+'</div><div class="meta">'+sel('qs_'+c.id,Object.entries(QST),r.st||'')+'<input class="fld" style="flex:1 1 220px" id="qr_'+c.id+'" placeholder="Document CALIBRA (ex. PR-06 §5.2)" value="'+esc(r.ref||'')+'"></div><textarea class="fld" id="qt_'+c.id+'" placeholder="Disposition CALIBRA : ce que nous faisons, en 2 à 4 lignes">'+esc(r.txt||'')+'</textarea><div class="row" style="justify-content:space-between"><span class="sub">'+(r.by?'Mis à jour par '+esc(r.by)+' le '+fr(r.at):'')+'</span><button class="btn" data-qsave="'+c.id+'">Enregistrer</button></div></div>'}).join('')+'</details>'});
+  return h}
+function vDates(){let h=head('Dates ALGERAC','Saisissez chaque date dès qu’ALGERAC envoie un document ou fixe un rendez-vous : les délais officiels se calculent automatiquement');
+  h+='<div class="grid g2"><div class="panel"><h2>Événements</h2><div class="tw"><table><tbody><tr><td><b>Démarrage du projet</b><div class="sub">Base de toutes les dates planifiées</div></td><td><input type="date" class="fld" id="launch" value="'+CFG.launch+'"></td></tr>'+JALONS.map(j=>'<tr><td><b>'+esc(j.l)+'</b><div class="sub">'+esc(j.s)+' · '+TASKS.filter(t=>t.j===j.c).length+' tâche(s)</div></td><td><input type="date" class="fld" data-j="'+j.c+'" value="'+(J[j.c]||'')+'"></td></tr>').join('')+'</tbody></table></div></div>';
+  const D=[['Compléter le dossier (sinon classé)','J02',6,'mois'],['Retourner convention + devis','J04',10,'j'],['Dernier délai après rappel','J05',5,'j'],['Récuser un évaluateur','J06',3,'j'],['Répondre à la revue documentaire','J07',3,'mois'],['Plan FOR 32 reçu au plus tard','J08',-5,'j'],['Renvoyer les FOR 02 + plans d’actions','J10',10,'j'],['FOR 02 après rappel du REE','J11',5,'j'],['Lever tous les écarts (sinon CAS)','J10',6,'mois'],['Rapport d’évaluation attendu','J10',45,'j']];
+  h+='<div class="panel"><h2>Délais officiels calculés</h2><div class="tw"><table><thead><tr><th>Obligation</th><th>Règle PRO 12</th><th>Date limite</th><th></th></tr></thead><tbody>'+D.map(([l,j,n,u])=>{const b=J[j],d=b?(u==='mois'?addM(b,n):addD(b,n)):null;return'<tr><td>'+l+'</td><td class="sub">'+j+' '+(n<0?'−':'+')+' '+Math.abs(n)+' '+u+'</td><td class="mono">'+fr(d)+'</td><td>'+(d?(d<TODAY?pill('late','Dépassé'):diff(d,TODAY)<=7?pill('soon',diff(d,TODAY)+' j'):pill('todo',diff(d,TODAY)+' j')):'<span class="sub">en attente</span>')+'</td></tr>'}).join('')+'</tbody></table></div><p class="sub">Jours calendaires (hypothèse à confirmer avec ALGERAC, tâche P0-11).</p>'+(J.J08&&J.J09?'<p>'+(J.J09<=addD(J.J08,-5)?pill('done','FOR 32 reçu dans les délais'):pill('late','FOR 32 reçu trop tard : à signaler au CD/RA'))+'</p>':'')+'</div></div>';return h}
+function vDocs(){const L=EV.slice().sort((a,b)=>a.at<b.at?1:-1);let h=head('Documents & preuves',L.length+' élément(s) joint(s) aux tâches · PDF et images téléversés ici, fichiers Word/Excel référencés par lien OneDrive');
+  h+='<div class="panel tw"><table><thead><tr><th>Document</th><th>Tâche</th><th>Ajouté par</th><th>Date</th></tr></thead><tbody>'+(L.length?L.map(e=>'<tr><td>'+evLink(e)+'</td><td class="click" data-t="'+e.task+'"><span class="mono">'+e.task+'</span> '+esc((byId[e.task]||{}).t||'')+'</td><td>'+esc(e.by)+'</td><td class="mono">'+fr(e.at)+'</td></tr>').join(''):'<tr><td colspan="4" class="empty">Aucun document pour l’instant. Ouvrez une tâche puis « Ajouter une preuve ».</td></tr>')+'</tbody></table></div>';return h}
+function evLink(e){if(e.kind==='file')return'<a href="'+esc(e.webUrl||'#')+'" target="_blank" rel="noopener">'+esc(e.name)+'</a> <span class="sub">OneDrive'+(e.size?' · '+Math.round(e.size/1024)+' Ko':'')+'</span>';const u=String(e.url||'');return/^https?:\/\//.test(u)?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(e.name||u)+'</a>':'<span class="mono">'+esc(e.name?e.name+' — ':'')+esc(u)+'</span>'}
+function teamPanel(){if(!(Store.mode==='demo'||Store.isAdmin()))return'';const M=CFG.members||{};const inv=Object.fromEntries(Object.entries(M).map(([e,n])=>[n,e]));return'<div class="panel" style="margin-top:16px"><h2>Équipe — comptes autorisés (administrateur)</h2><p class="sub">Associez chaque membre à l’adresse de son compte Microsoft (@calibraes.com). Sans association, le compte peut lire mais pas modifier.</p><div class="tw"><table><tbody>'+Object.keys(TEAM).map(n=>'<tr><td><b>'+n+'</b><div class="sub">'+TEAM[n]+'</div></td><td><input class="fld" style="width:100%" id="tm_'+n+'" value="'+esc(inv[n]||'')+'" placeholder="prenom.nom@calibraes.com"></td></tr>').join('')+'</tbody></table></div><div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn p" id="tmsave">Enregistrer l’équipe</button></div></div>'}
+function vGuide(){return teamPanel()+head('Guide','Règles d’utilisation pour l’équipe CALIBRA')+'<div class="grid g2"><div class="panel"><h2>Utilisation quotidienne</h2><ol class="steps"><li>Choisissez votre nom dans <b>Utilisateur</b> (en bas du menu).</li><li>Ouvrez <b>Mes tâches</b> : les retards et blocages sont en haut.</li><li>Cliquez une tâche : lisez <b>Pourquoi</b> et <b>Comment faire</b>, puis suivez les étapes.</li><li>Cliquez <b>Démarrer</b>, puis <b>Marquer terminé</b> quand le livrable existe.</li><li>Joignez toujours la preuve (PDF, image, ou lien OneDrive pour Word/Excel).</li><li>Bloqué ? Cliquez <b>Signaler un blocage</b> et écrivez la raison : elle apparaît au tableau de bord.</li><li>Quand ALGERAC envoie quelque chose ou fixe une date : saisissez-la dans <b>Dates ALGERAC</b>.</li></ol></div><div class="panel"><h2>Règles</h2><ol class="steps"><li>Les tâches <b>Décision</b> sont préparées par le responsable et validées par le décideur indiqué : Karim pour les décisions techniques d’inspection, Brahim pour le système qualité, Ali (DG) pour les engagements de l’entreprise. Ali peut valider toute décision.</li><li>Une tâche terminée sans preuve sera contestée par ALGERAC : joignez le document.</li><li>Les alertes rouges ⚠ sont des délais officiels ALGERAC : leur dépassement peut faire classer le dossier.</li><li>Tous formats acceptés (PDF, Word, Excel, photos…) : les fichiers sont rangés dans OneDrive › ALGERAC-Tracker › evidence › n° de tâche.</li><li>Accès : chaque membre doit avoir le niveau « Contributeur » sur cette page.</li></ol><div class="sec"><h3>Sauvegarde</h3><p class="sub">Export complet (statuts, dates, commentaires, questionnaire, liste des preuves) à ranger dans OneDrive › Calibra › ALGERAC › RWP.</p><button class="btn" id="bk">Télécharger la sauvegarde</button></div></div></div>'}
+// drawer
+function vDrawer(id){const t=byId[id],r=S[id]||{},k=fk(t),s=st(t),pre=preOpen(t),isDec=t.k==='dec',mayClose=canDecide(t);
+  let rule=t.m==='P'?'Planifiée : démarrage + '+t.o+' j, durée '+t.n+' j':(t.dl==null?'Délai fixé par la convention ALGERAC':JL[t.j].l+' '+(t.u==='j avant'?'− '+t.dl+' j':'+ '+t.dl+' '+(t.u==='mois'?'mois':'j')));
+  let h='<div class="scrim" data-close="1"></div><div class="drawer" role="dialog" aria-modal="true" aria-label="Détail de la tâche"><div class="dhead"><div><span class="mono sub">'+t.id+' · '+esc(PHASES[t.p])+'</span><h2>'+esc(t.t)+'</h2><div class="row">'+pill(k)+(isDec?'<span class="pill" style="--c:var(--dec);--b:var(--dec-bg)">Décision · '+t.dk+'</span>':'')+(t.crit?'<span class="pill" style="--c:var(--late);--b:var(--late-bg)">Critique</span>':'')+'</div></div><button class="btn" data-close="1" aria-label="Fermer">Fermer</button></div>';
+  if(t.w&&open(t))h+='<p class="warn">⚠ '+esc(t.w)+'</p>';
+  if(pre&&open(t))h+='<div class="note">Prérequis non terminé : <b>'+pre.id+' · '+esc(pre.t)+'</b> ('+pre.who+')</div>';
+  if(s==='blocked'&&r.note)h+='<div class="note bad"><b>Bloqué :</b> '+esc(r.note)+'</div>';
+  h+='<dl class="kv" style="margin-top:12px"><dt>Responsable</dt><dd>'+t.who+' · '+TEAM[t.who]+'</dd>'+(isDec?'<dt>Décideur</dt><dd>'+t.dk+'</dd>':'')+'<dt>Échéance</dt><dd class="mono">'+fr(due(t))+(r.due?' (date modifiée)':'')+'</dd><dt>Règle de date</dt><dd>'+esc(rule)+'</dd><dt>Référence</dt><dd>'+esc(t.ref)+'</dd>'+(r.by?'<dt>Dernière mise à jour</dt><dd>'+esc(r.by)+' · '+fr(r.at)+'</dd>':'')+'</dl>';
+  h+='<div class="sec"><h3>Pourquoi</h3><p style="margin:0;max-width:68ch">'+esc(t.why)+'</p></div><div class="sec"><h3>Comment faire</h3><ol class="steps">'+t.steps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol></div><div class="sec"><h3>Livrable attendu</h3><p style="margin:0">'+esc(t.d)+'</p></div>';
+  h+='<div class="sec"><h3>Mise à jour</h3><div class="actions">';
+  if(open(t)){if(s!=='doing')h+='<button class="btn p" data-a="doing">Démarrer</button>';h+='<button class="btn ok" data-a="done"'+(mayClose?'':' disabled')+'>'+(isDec?'Valider la décision':'Marquer terminé')+'</button>';h+=s==='blocked'?'<button class="btn" data-a="unblock">Lever le blocage</button>':'<button class="btn w" data-a="block">Signaler un blocage</button>';if(DECIDERS.includes(me))h+='<button class="btn" data-a="na">Non applicable</button>'}
+  else h+='<button class="btn" data-a="reopen">Rouvrir</button>';
+  h+='</div>'+(isDec&&!mayClose&&open(t)?'<p class="sub">Vous préparez ; la décision est validée par '+t.dk+(t.dk!=='Ali'?' (ou Ali, DG)':'')+'.</p>':'')+(blockOpen?'<div class="row" style="margin-top:10px"><input class="fld" id="breason" placeholder="Motif du blocage (une phrase)"><button class="btn w" data-a="blockok">Enregistrer</button></div>':'');
+  if(DECIDERS.includes(me))h+='<div class="row" style="margin-top:10px"><label class="sub" for="dueo">Modifier l’échéance</label><input type="date" class="fld" id="dueo" value="'+(r.due||'')+'" style="flex:0 1 180px"><button class="btn" data-a="due">Appliquer</button>'+(r.due?'<button class="btn" data-a="dueclear">Revenir au calcul</button>':'')+'</div>';
+  h+='</div>';
+  const ev=evOf(id);h+='<div class="sec"><h3>Preuves ('+ev.length+')</h3>'+(ev.length?ev.map(e=>'<div class="ev"><span>'+evLink(e)+'<br><span class="sub">'+esc(e.by)+' · '+fr(e.at)+'</span></span>'+(e.by===me||DECIDERS.includes(me)?'<button class="btn" data-evdel="'+e._id+'">Retirer</button>':'')+'</div>').join(''):'<p class="empty">Aucune preuve jointe.</p>');
+  h+=(Store.mode==='live'?'<div class="row"><input type="file" id="evfile" class="fld"><button class="btn p" data-a="upload">Téléverser</button></div>':'<p class="sub">Mode démo : téléversement indisponible, utilisez un lien.</p>')+'<div class="row" style="margin-top:8px"><input class="fld" id="evurl" placeholder="Lien ou chemin OneDrive (ex. Calibra\\ALGERAC\\Dossier\\A01-03.docx)"><input class="fld" id="evname" placeholder="Titre (facultatif)" style="flex:0 1 160px"><button class="btn" data-a="link">Ajouter le lien</button></div></div>';
+  const cm=cmOf(id);h+='<div class="sec"><h3>Commentaires ('+cm.length+')</h3>'+cm.map(c=>'<div class="cm"><b>'+esc(c.by)+'</b> <span class="sub mono">'+fr(c.at)+'</span><div>'+esc(c.text)+'</div></div>').join('')+'<textarea class="fld" id="cmt" placeholder="Ajouter un commentaire (avancement, difficulté, information)"></textarea><div class="row" style="margin-top:6px;justify-content:flex-end"><button class="btn" data-a="comment">Publier</button></div></div></div>';
+  return h}
+// render
+function render(){
+  const a=document.activeElement;if(a&&['INPUT','TEXTAREA','SELECT'].includes(a.tagName)&&a.type!=='file'&&a.id!=='me'){pending=true;return}
+  pending=false;
+  const c=counts(TASKS),mineN=me?TASKS.filter(t=>t.who===me&&['late','blocked','doing','soon'].includes(fk(t))).length:0;
+  document.getElementById('nav').innerHTML=VIEWS.map(([k,l])=>'<button data-v="'+k+'"'+(k===view?' aria-current="page"':'')+'><span>'+l+'</span>'+(k==='tasks'&&c.late?'<span class="nbadge r">'+c.late+'</span>':'')+(k==='mine'&&mineN?'<span class="nbadge">'+mineN+'</span>':'')+'</button>').join('');
+  let h='';if(loaded&&!db)h+='<div class="note bad">Base partagée indisponible : vous consultez le plan, mais rien n’est enregistré.</div>';if(!canWrite)h+='<div class="note bad">Accès en lecture seule. Demandez à Brahim le niveau « Contributeur ».</div>';
+  h+=({dash:vDash,tasks:()=>vTasks(false),mine:()=>vTasks(true),dossier:vDossier,for041:vFor041,dates:vDates,docs:vDocs,guide:vGuide}[view]||vDash)();
+  const m=document.getElementById('main');const open_=[...m.querySelectorAll('details.ch')].map(d=>d.open);m.innerHTML=h;m.querySelectorAll('details.ch').forEach((d,i)=>{if(open_[i])d.open=true});
+  document.getElementById('drawerHost').innerHTML=drawer&&byId[drawer]?vDrawer(drawer):'';
+}
+document.addEventListener('focusout',()=>setTimeout(()=>{if(pending)render()},0));
+const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;
+meSel.addEventListener('change',()=>{me=meSel.value;try{localStorage.setItem('alg_me',me)}catch(e){}render()});
+document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;go(b.dataset.v)});
+function go(v){view=v;if(v!=='tasks')flt={q:'',who:'',ph:'',st:'',k:''};try{localStorage.setItem('alg_view',view)}catch(e){}render();window.scrollTo(0,0)}
+document.body.addEventListener('click',async e=>{
+  const k=e.target.closest('[data-go]');if(k){const g=k.dataset.go;flt={q:'',who:'',ph:'',st:'',k:''};if(g==='docs'){go('docs');return}if(g==='f:dec'){flt.k='dec';flt.st='open'}else if(g.startsWith('f:'))flt.st=g.slice(2);go('tasks');return}
+  const ph=e.target.closest('[data-ph]');if(ph){flt={q:'',who:'',ph:ph.dataset.ph,st:'',k:''};view='tasks';render();window.scrollTo(0,0);return}
+  const tr=e.target.closest('[data-t]');if(tr&&!e.target.closest('a')){drawer=tr.dataset.t;blockOpen=false;render();return}
+  if(e.target.closest('[data-close]')){drawer=null;blockOpen=false;render();return}
+  if(e.target.id==='bk'){backup();return}
+  if(e.target.id==='tmsave'){if(!guard())return;const M={};Object.keys(TEAM).forEach(n=>{const v=(document.getElementById('tm_'+n).value||'').trim().toLowerCase();if(v)M[v]=n});CFG.members=M;if(await w('config/main',{launch:CFG.launch,members:M,by:me,at:new Date().toISOString()}))toast('Équipe enregistrée');return}
+  const qs=e.target.closest('[data-qsave]');if(qs){const id=qs.dataset.qsave;if(!guard())return;const d={st:document.getElementById('qs_'+id).value,ref:document.getElementById('qr_'+id).value.trim(),txt:document.getElementById('qt_'+id).value.trim(),by:me,at:new Date().toISOString()};CL[id]=d;if(await w('clauses/'+id,d))toast('Clause '+id+' enregistrée');render();return}
+  const ed=e.target.closest('[data-evdel]');if(ed){const x=EV.find(v=>v._id===ed.dataset.evdel);if(!x||!guard())return;try{await db.doc('evidence/'+x._id).delete();toast('Preuve retirée de la liste (le fichier reste dans OneDrive, trace dans le journal)')}catch(err){toast((err&&err.message)||'Échec')}return}
+  const b=e.target.closest('[data-a]');if(!b||b.disabled||!drawer)return;const id=drawer,a=b.dataset.a;
+  if(a==='doing')saveTask(id,{s:'doing'},'Tâche démarrée');
+  if(a==='done'){if(!evOf(id).length)toast('Terminé — pensez à joindre la preuve');saveTask(id,{s:'done',doneOn:TODAY},'Tâche terminée')}
+  if(a==='block'){blockOpen=true;render();setTimeout(()=>{const i=document.getElementById('breason');i&&i.focus()},0)}
+  if(a==='blockok'){const v=(document.getElementById('breason').value||'').trim();if(!v){toast('Indiquez le motif');return}blockOpen=false;saveTask(id,{s:'blocked',note:v},'Blocage signalé')}
+  if(a==='unblock')saveTask(id,{s:'doing',note:''},'Blocage levé');
+  if(a==='na')saveTask(id,{s:'na'},'Marquée non applicable');
+  if(a==='reopen')saveTask(id,{s:'doing',doneOn:null},'Tâche rouverte');
+  if(a==='due'){const v=document.getElementById('dueo').value;if(v)saveTask(id,{due:v},'Échéance modifiée')}
+  if(a==='dueclear')saveTask(id,{due:null},'Échéance recalculée');
+  if(a==='comment'){const v=document.getElementById('cmt').value.trim();if(!v||!guard())return;const d={task:id,text:v,by:me,at:new Date().toISOString()};document.getElementById('cmt').value='';try{await db.collection('comments').add(d);toast('Commentaire publié')}catch(err){toast('Échec')}}
+  if(a==='link'){const u=document.getElementById('evurl').value.trim(),n=document.getElementById('evname').value.trim();if(!u){toast('Collez un lien ou un chemin');return}if(!guard())return;try{await db.collection('evidence').add({task:id,kind:'link',url:u,name:n,by:me,at:new Date().toISOString()});toast('Lien ajouté')}catch(err){toast('Échec')}}
+  if(a==='upload'){const f=(document.getElementById('evfile').files||[])[0];if(!f){toast('Choisissez un fichier');return}if(!guard())return;
+    b.disabled=true;b.textContent='Envoi…';
+    try{const r=await Store.upload(id,f);await db.collection('evidence').add({task:id,kind:'file',itemId:r.itemId,webUrl:r.webUrl,path:r.path,name:r.name,size:r.size,by:me,at:new Date().toISOString()});toast('Document enregistré dans OneDrive')}
+    catch(err){toast((err&&err.message)||'Échec du téléversement')}
+    b.disabled=false;b.textContent='Téléverser'}
+});
+document.body.addEventListener('input',e=>{if(e.target.id==='fq'){flt.q=e.target.value;clearTimeout(window._fq);window._fq=setTimeout(()=>{const p=e.target.selectionStart;e.target.blur();render();const i=document.getElementById('fq');if(i){i.focus();i.setSelectionRange(p,p)}},350)}});
+document.body.addEventListener('change',e=>{const id=e.target.id;
+  if(['fwho','fph','fst','fk'].includes(id)){flt[{fwho:'who',fph:'ph',fst:'st',fk:'k'}[id]]=e.target.value;e.target.blur();render();return}
+  if(e.target.dataset.j!==undefined){const c=e.target.dataset.j,v=e.target.value;if(!guard())return;J[c]=v||undefined;e.target.blur();(v?w('jalons/'+c,{date:v,by:me,at:new Date().toISOString()}):db.doc('jalons/'+c).delete()).then(()=>toast('Date enregistrée'));render();return}
+  if(id==='launch'&&e.target.value){if(!guard())return;CFG.launch=e.target.value;e.target.blur();w('config/main',{launch:CFG.launch,members:CFG.members||{},by:me,at:new Date().toISOString()}).then(ok=>ok&&toast('Démarrage enregistré'));render()}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&drawer){drawer=null;render()}});
+async function backup(){const data=JSON.stringify({exporte_le:new Date().toISOString(),par:me,demarrage:CFG.launch,jalons:J,taches:TASKS.map(t=>Object.assign({id:t.id,tache:t.t,responsable:t.who,echeance:due(t),etat:FL[fk(t)][0]},S[t.id]||{})),questionnaire:CL,preuves:EV,commentaires:CM},null,1);
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download='ALGERAC_suivi_'+TODAY+'.json';document.body.appendChild(a);a.click();a.remove();toast('Sauvegarde téléchargée')}
+
+// ---------------- bootstrap (Store) ----------------
+db=Store;
+function gate(html){document.getElementById('main').innerHTML='<div class="panel" style="max-width:560px;margin:40px auto">'+html+'</div>';document.getElementById('nav').innerHTML=''}
+(async()=>{
+  const r=await Store.init();
+  if(!r.ok){
+    if(r.reason==='signin'){gate('<h1>Accréditation ALGERAC</h1><p class="sub" style="margin:8px 0 18px">Espace réservé à l’équipe CALIBRA. Connectez-vous avec votre compte Microsoft (adresse @calibraes.com).</p><button class="btn p" id="signin">Se connecter avec Microsoft</button>');document.getElementById('signin').onclick=()=>Store.signIn();return}
+    if(r.reason==='denied'){gate('<h1>Accès refusé</h1><p style="margin:10px 0">Le compte <b>'+esc(Store.email)+'</b> n’est pas autorisé. Utilisez un compte @calibraes.com.</p><button class="btn" id="so">Changer de compte</button>');document.getElementById('so').onclick=()=>Store.signOut();return}
+    gate('<h1>Connexion aux données impossible</h1><p class="warn" style="margin:10px 0">'+esc((r.error&&r.error.message)||'Erreur inconnue')+'</p><p class="sub">Vérifiez que le dossier OneDrive ALGERAC-Tracker est partagé en modification avec '+esc(Store.email)+'.</p><button class="btn" id="so">Changer de compte</button>');document.getElementById('so').onclick=()=>Store.signOut();return}
+  sub=(col,fn)=>db.collection(col).onSnapshot(s=>{fn(s);render()});
+  sub('tasks',s=>{S={};s.docs.forEach(d=>S[d.id]=d.data())});
+  sub('jalons',s=>{J={};s.docs.forEach(d=>{const x=d.data();if(x&&x.date)J[d.id]=x.date})});
+  sub('evidence',s=>{EV=s.docs.map(d=>Object.assign({_id:d.id},d.data()))});
+  sub('comments',s=>{CM=s.docs.map(d=>Object.assign({_id:d.id},d.data()))});
+  sub('clauses',s=>{CL={};s.docs.forEach(d=>CL[d.id]=d.data())});
+  db.doc('config/main').onSnapshot(s=>{const x=s.exists?s.data():null;CFG={launch:(x&&x.launch)||DEFAULT_LAUNCH,members:(x&&x.members)||{}};
+    if(Store.mode==='live'){const m=CFG.members[Store.email]||(Store.isAdmin()?'Brahim':'');me=m;canWrite=!!m;meSel.value=m;meSel.disabled=true}
+    render()});
+  Store.onSync(()=>render());
+  loaded=true;render();
+  const foot=document.querySelector('.side-foot');
+  if(Store.mode==='live'){const d=document.createElement('div');d.style.marginTop='8px';d.innerHTML='<div style="color:#fff;word-break:break-all">'+esc(Store.email)+'</div><button class="btn" id="logout" style="margin-top:6px;width:100%">Déconnexion</button>';foot.appendChild(d);document.getElementById('logout').onclick=()=>Store.signOut()}
+  else{const d=document.createElement('div');d.style.cssText='margin-top:10px;color:var(--brand);font-weight:600';d.textContent='MODE DÉMO — données locales';foot.appendChild(d)}
+})();

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<title>Suivi Accréditation ALGERAC</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: fixed left navigation (programme office style) + scrolling workspace; summary first, detail in a side drawer */
+:root{
+  --bg:#EEF1F3; --surface:#FFFFFF; --surface2:#F6F8F9; --ink:#14212B; --muted:#5B6873; --line:#D9DFE3;
+  --nav:#0F2A3A; --nav-ink:#C9D6DE; --nav-active:#FFFFFF; --brand:#F2B705; --brand-ink:#14212B;
+  --late:#B42318; --late-bg:#FDECEA; --block:#B54708; --block-bg:#FEF0E1; --doing:#175CD3; --doing-bg:#E8F0FD;
+  --done:#067647; --done-bg:#E6F4EC; --wait:#667085; --wait-bg:#EEF0F3; --dec:#6941C6; --dec-bg:#F1ECFB;
+  --sans:"IBM Plex Sans",system-ui,"Segoe UI",Arial,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0D151B; --surface:#152029; --surface2:#1A2731; --ink:#E6ECEF; --muted:#9AA8B3; --line:#2A3945;
+  --nav:#08131A; --nav-ink:#9FB2BF; --nav-active:#FFFFFF;
+  --late:#F97066; --late-bg:#3A1B19; --block:#F79009; --block-bg:#3A2914; --doing:#84ADFF; --doing-bg:#172A45;
+  --done:#47CD89; --done-bg:#133227; --wait:#9AA8B3; --wait-bg:#22303A; --dec:#B692F6; --dec-bg:#2A2142; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D151B; --surface:#152029; --surface2:#1A2731; --ink:#E6ECEF; --muted:#9AA8B3; --line:#2A3945;
+  --nav:#08131A; --nav-ink:#9FB2BF; --nav-active:#FFFFFF;
+  --late:#F97066; --late-bg:#3A1B19; --block:#F79009; --block-bg:#3A2914; --doing:#84ADFF; --doing-bg:#172A45;
+  --done:#47CD89; --done-bg:#133227; --wait:#9AA8B3; --wait-bg:#22303A; --dec:#B692F6; --dec-bg:#2A2142; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+aside{background:var(--nav);color:var(--nav-ink);padding-block:18px;position:sticky;top:0;height:100vh;overflow:auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:14px}
+.logo{color:#fff;font-weight:700;font-size:15px;line-height:1.25;padding:0 8px 16px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:12px}
+.logo small{display:block;color:var(--brand);font-weight:500;font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-top:4px}
+aside nav{display:grid;gap:2px}
+aside nav button{all:unset;cursor:pointer;padding:9px 10px;border-radius:6px;display:flex;justify-content:space-between;gap:8px;font-size:14px}
+aside nav button:hover{background:rgba(255,255,255,.06)}
+aside nav button[aria-current="page"]{background:rgba(255,255,255,.1);color:var(--nav-active);box-shadow:inset 3px 0 0 var(--brand)}
+aside nav button:focus-visible{outline:2px solid var(--brand)}
+.nbadge{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.12);border-radius:10px;padding:1px 7px;color:#fff}
+.nbadge.r{background:var(--late);color:#fff}
+.side-foot{margin-top:18px;padding:12px 8px 0;border-top:1px solid rgba(255,255,255,.1);font-size:12px}
+.side-foot label{display:block;margin-bottom:6px;color:var(--nav-ink)}
+.side-foot select{width:100%;font:inherit;font-size:14px;padding:7px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:#0B1F2B;color:#fff}
+main{padding-block:22px 60px;padding-left:28px;padding-right:max(28px,env(safe-area-inset-right,0px));min-width:0}
+@media (max-width:860px){.app{grid-template-columns:minmax(0,1fr)}aside{position:static;height:auto;padding-right:max(14px,env(safe-area-inset-right,0px))}aside nav{grid-auto-flow:column;overflow-x:auto}.side-foot{display:flex;gap:10px;align-items:center}.side-foot label{margin:0}main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}}
+.ptitle{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:22px;margin:0;font-weight:600;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px}
+h2{font-size:15px;font-weight:600;margin:0 0 12px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:2fr 1fr}
+@media (max-width:1100px){.g2,.g3{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:10px;margin-bottom:16px}
+@media (max-width:1300px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{all:unset;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:2px;border-top:3px solid var(--c,var(--line))}
+.kpi:focus-visible{outline:2px solid var(--doing)}
+.kpi .v{font-family:var(--mono);font-size:26px;font-weight:500;color:var(--c,var(--ink));font-variant-numeric:tabular-nums;line-height:1.15}
+.kpi .l{font-weight:600;font-size:13px}
+.kpi .h{color:var(--muted);font-size:12px}
+.mile{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.mile .big{font-family:var(--mono);font-size:30px;font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface2)}
+.tw{overflow-x:auto}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--b);color:var(--c);white-space:nowrap}
+.bar{height:8px;border-radius:4px;background:var(--wait-bg);overflow:hidden;min-width:80px}
+.bar i{display:block;height:100%;background:var(--done)}
+.stack{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--wait-bg)}
+.stack i{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--c);margin-right:5px;vertical-align:-1px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filters input,.filters select,.fld{font:inherit;font-size:13px;padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-width:0}
+.filters input{flex:1 1 220px}
+.btn{font:inherit;font-size:13px;font-weight:600;border-radius:6px;padding:7px 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn:hover{background:var(--surface2)}
+.btn.p{background:var(--doing);border-color:var(--doing);color:#fff}
+.btn.ok{background:var(--done);border-color:var(--done);color:#fff}
+.btn.w{color:var(--block);border-color:var(--block)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,.fld:focus-visible,.filters *:focus-visible{outline:2px solid var(--doing);outline-offset:1px}
+.empty{color:var(--muted);padding:14px 0}
+.note{border-radius:8px;padding:10px 14px;background:var(--wait-bg);margin-bottom:14px}
+.note.bad{background:var(--late-bg);color:var(--ink)}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(10,20,28,.45);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--surface);z-index:21;overflow:auto;padding:22px max(22px,env(safe-area-inset-right,0px)) 40px 22px;box-shadow:-8px 0 24px rgba(0,0,0,.18)}
+.dhead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.dhead h2{font-size:18px;margin:4px 0 8px}
+.sec{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px;font-weight:600}
+.steps{margin:0;padding-left:20px;display:grid;gap:6px;max-width:68ch}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:6px 12px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.ev{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px}
+.ev a{color:var(--doing);font-weight:600;word-break:break-all}
+.cm{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.cm b{font-weight:600}
+textarea.fld{width:100%;min-height:64px;resize:vertical}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row .fld{flex:1 1 200px}
+.warn{color:var(--late);font-weight:600}
+details.ch{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+details.ch>summary{padding:12px 16px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-weight:600}
+.clause{padding:12px 16px;border-top:1px solid var(--line);display:grid;gap:8px}
+.clause .qt{font-size:13px;white-space:pre-line;color:var(--ink)}
+.clause .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:9px 16px;border-radius:8px;font-weight:600;z-index:30}
+.gantt text{font-family:var(--sans);font-size:11px;fill:var(--muted)}
+.feed{display:grid;gap:8px;font-size:13px}
+.feed div{display:flex;gap:10px}
+.feed time{font-family:var(--mono);color:var(--muted);font-size:12px;white-space:nowrap}
+</style>
+
+</head>
+<body>
+<div class="app">
+<aside>
+  <div class="logo">CALIBRA Energy Services<small>Accréditation ALGERAC · ISO/IEC 17020</small></div>
+  <nav aria-label="Sections" id="nav"></nav>
+  <div class="side-foot"><label for="me">Utilisateur</label><select id="me"><option value="">— Choisir —</option></select></div>
+</aside>
+<main id="main"><p class="empty">Chargement…</p></main>
+</div>
+<div id="drawerHost"></div>
+<div class="toast" id="toast" hidden></div>
+<script src="config.js"></script>
+<script src="vendor/msal-browser-3.28.1.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
