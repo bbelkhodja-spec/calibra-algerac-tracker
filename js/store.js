@@ -124,7 +124,7 @@
     if (error) return error.message === 'Invalid login credentials' ? 'Adresse ou mot de passe incorrect.' : error.message;
     location.reload(); return null;
   };
-  Store.signOut = async () => { try { await sb.auth.signOut(); } catch (e) {} location.reload(); };
+  Store.signOut = async () => { try { await sb.auth.signOut({ scope: 'local' }); } catch (e) {} try { Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch (e) {} location.reload(); };
   Store.changePassword = async password => {
     const { error } = await sb.auth.updateUser({ password });
     return error ? error.message : null;

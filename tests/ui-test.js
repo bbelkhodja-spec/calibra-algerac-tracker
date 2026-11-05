@@ -54,7 +54,7 @@ async function boot({ live, email, members, rows }) {
   if (members) db.rows.push({ col: 'config', id: 'main', data: { launch: '2026-11-08', members }, deleted: false, version: 1, updated_by: 'x' });
   let html = rd('index.html').replace(/<script src="([^"]+)"><\/script>/g, (m, src) => {
     if (src.includes('supabase-js')) return '';
-    let code = rd(src);
+    src = src.split('?')[0]; let code = rd(src);
     if (src === 'config.js' && !live) code = code.replace(/supabaseUrl: "[^"]*"/, 'supabaseUrl: ""');
     return '<script>' + code.replace(/<\/script>/g, '<\\/script>') + '</script>';
   });

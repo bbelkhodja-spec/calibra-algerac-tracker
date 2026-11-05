@@ -133,7 +133,8 @@ function render(){
   document.getElementById('drawerHost').innerHTML=drawer&&byId[drawer]?vDrawer(drawer):'';
 }
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pending)render()},0));
-const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;if(Store.mode==='live')meSel.disabled=true;
+const meSel=document.getElementById('me');Object.keys(TEAM).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p+' — '+TEAM[p];meSel.appendChild(o)});meSel.value=me;if(Store.mode==='live'){meSel.disabled=true;meSel.style.display='none';const lb=document.querySelector('label[for=me]');if(lb)lb.style.display='none'}
+const BUILD='20261105-3';{const v=document.createElement('div');v.style.cssText='margin-top:8px;opacity:.6;font-size:11px';v.textContent='Version '+BUILD;document.querySelector('.side-foot').appendChild(v)}
 meSel.addEventListener('change',()=>{if(Store.mode==='live'||gated){meSel.value=me;return}me=meSel.value;try{localStorage.setItem('alg_me',me)}catch(e){}render()});
 // Menu : un clic sur un onglet repart toujours de filtres vides (les tuiles du tableau de bord, elles, posent un filtre).
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;flt={q:'',who:'',ph:'',st:'',k:''};go(b.dataset.v)});
