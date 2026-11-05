@@ -1,72 +1,67 @@
 # Mise en service — Plateforme ALGERAC (pour Brahim, ~20 minutes)
 
 Adresse de la plateforme : **https://bbelkhodja-spec.github.io/calibra-algerac-tracker/**
-Tant que l'étape 3 n'est pas faite, elle tourne en **MODE DÉMO** (données locales à votre navigateur) : vous pouvez déjà tout essayer.
+Tant que l'étape 4 n'est pas faite, elle tourne en **MODE DÉMO** (données locales à votre navigateur).
 
-Rien ici ne demande de mot de passe ou de clé dans le code. Toutes les connexions et consentements sont faits par vous.
+Hébergement des données : **Supabase**, offre gratuite (aucune carte bancaire), serveur en Europe (Francfort).
+Rien ici ne demande de mot de passe ou de clé secrète dans le code. Toutes les connexions sont faites par vous.
+
+> Décision du 05-11-2026 : l'enregistrement d'une application Microsoft exige désormais un annuaire Azure
+> (vérification par carte bancaire). Option de secours du brief retenue par Brahim : Supabase.
 
 ---
 
-## Étape 0 — Mettre la plateforme en ligne sur GitHub (5 min)
-*(Je n'ai pas pu créer le dépôt moi-même : l'accès GitHub de Claude est limité aux dépôts existants.)*
+## Étape 1 — Créer le compte et le projet Supabase (5 min)
+1. Ouvrez **https://supabase.com** › **Start your project** › **Continue with GitHub** (compte `bbelkhodja-spec`) › autorisez.
+2. Créez une organisation : nom `CALIBRA`, type *Company*, plan **Free**.
+3. **New project** :
+   - Name : `calibra-algerac`
+   - Database Password : cliquez **Generate a password**, puis rangez-le dans votre gestionnaire de mots de passe. **Ne le donnez à personne, pas même à Claude** (la plateforme n'en a pas besoin).
+   - Region : **Central EU (Frankfurt)**
+   - **Create new project** (1 à 2 minutes de préparation).
 
-**Option A — PowerShell (si git et gh sont installés et gh connecté à votre compte GitHub) :**
-```powershell
-$RWP="C:\Users\BBelkhodja\OneDrive\Calibra\ALGERAC\RWP"; $P="C:\Users\BBelkhodja\CALIBRA-DEV\calibra-algerac-tracker"
-Expand-Archive "$RWP\calibra-algerac-tracker.zip" -DestinationPath $P -Force
-Set-Location $P; git init -b main; git add -A; git commit -m "Plateforme ALGERAC v1"
-gh repo create calibra-algerac-tracker --public --source . --push
-$U = gh api user --jq .login
-gh api -X POST "repos/$U/calibra-algerac-tracker/pages" -f "source[branch]=main" -f "source[path]=/"
-"Adresse : https://$U.github.io/calibra-algerac-tracker/"
-```
-**Option B — navigateur :** github.com › New repository › nom `calibra-algerac-tracker` › Public › Create. Puis « uploading an existing file » › glissez **tout le contenu** du zip décompressé › Commit. Puis Settings › Pages › Branch `main` / `/ (root)` › Save.
+## Étape 2 — Créer la base (1 min)
+1. Menu de gauche › **SQL Editor** › **New query**.
+2. Collez tout le contenu du fichier `supabase/schema.sql` du dépôt › **Run**.
+3. Résultat attendu : « Success. No rows returned ».
 
-Attendez 1–2 minutes : la plateforme s'ouvre en mode démo. **Si votre identifiant GitHub n'est pas `bbelkhodja-spec`, remplacez-le dans l'adresse de l'étape 1.5.**
+## Étape 3 — Régler la connexion (3 min)
+1. **Authentication › Sign In / Providers** (ou *Providers*) :
+   - **Allow new users to sign up** : **désactivé** (seul l'administrateur crée les comptes).
+   - Provider **Email** : activé.
+2. **Authentication › URL Configuration** : *Site URL* = `https://bbelkhodja-spec.github.io/calibra-algerac-tracker/` › Save.
+3. **Authentication › Users › Add user › Create new user**, pour chaque personne :
+   - Email : l'adresse (belkhodja.brahim@live.fr, puis karim…@calibraes.com, etc.)
+   - Password : un mot de passe provisoire (12 caractères minimum)
+   - **Auto Confirm User** : coché › Create user.
+   - Remettez le mot de passe provisoire **de vive voix**, jamais par e-mail. Chacun le change à la première connexion.
 
-## Étape 1 — Enregistrer l'application chez Microsoft (5 min)
-1. Ouvrez **https://entra.microsoft.com** et connectez-vous avec **belkhodja.brahim@live.fr**.
-   - Si Microsoft demande de créer un annuaire / un compte Azure gratuit : acceptez l'option gratuite (pas d'abonnement payant nécessaire pour cet usage). *Si une carte bancaire est exigée, arrêtez et prévenez-moi.*
-2. Menu **Applications › Inscriptions d'applications › Nouvelle inscription**.
-3. Nom : `CALIBRA ALGERAC Tracker`.
-4. Types de comptes pris en charge : **« Comptes Microsoft personnels uniquement »**.
-5. URI de redirection : plateforme **« Application monopage (SPA) »**, valeur :
-   `https://bbelkhodja-spec.github.io/calibra-algerac-tracker/`
-6. Cliquez **Inscrire**.
-7. Sur la page de l'application, copiez **« ID d'application (client) »** (format `xxxxxxxx-xxxx-…`). → c'est le **clientId**.
-8. Menu **Autorisations de l'API › Ajouter une autorisation › Microsoft Graph › Autorisations déléguées** : cochez **User.Read** et **Files.ReadWrite.All** › Ajouter.
+## Étape 4 — Activer le mode réel (1 min)
+1. **Project Settings › API** (ou *API Keys*) : copiez
+   - **Project URL** (`https://xxxx.supabase.co`) → `supabaseUrl`
+   - la clé **anon / publishable** (publique) → `supabaseKey`
+   - **Jamais** la clé `service_role` / `secret`.
+2. Donnez ces deux valeurs à Claude, qui met à jour `config.js` sur GitHub.
+   *(Ou vous-même : GitHub › `config.js` › crayon › collez les deux valeurs entre les guillemets › Commit.)*
 
-## Étape 2 — Créer et partager le dossier OneDrive (5 min)
-1. Sur **https://onedrive.live.com** (compte belkhodja.brahim@live.fr), créez à la racine le dossier **`ALGERAC-Tracker`**.
-2. Clic droit sur le dossier › **Partager** › réglage du lien : **« Personnes spécifiques »** + **« Peut modifier »**.
-3. Ajoutez les adresses des membres (comptes Microsoft créés sur leur adresse @calibraes.com — voir étape 5). Vous pourrez en ajouter plus tard.
-4. **Copier le lien** → c'est le **shareUrl**.
+## Étape 5 — Première connexion (2 min)
+1. Ouvrez la plateforme › votre adresse + mot de passe › **Se connecter**.
+2. **Changer mon mot de passe** (bas du menu).
+3. Menu **Guide** › panneau **Équipe** : associez chaque nom à son adresse › **Enregistrer l'équipe**.
+4. Menu **Dates ALGERAC** › vérifiez la date de démarrage (08-11-2026 par défaut).
 
-## Étape 3 — Activer le mode réel (1 min)
-Donnez-moi (dans la conversation Claude) le **clientId** et le **shareUrl** : je mets à jour `config.js` sur GitHub.
-*(Ou vous-même : GitHub › dépôt `calibra-algerac-tracker` › `config.js` › crayon › collez les deux valeurs entre les guillemets › Commit.)*
-
-## Étape 4 — Première connexion (2 min)
-1. Ouvrez la plateforme › **Se connecter avec Microsoft** › compte **belkhodja.brahim@live.fr** › acceptez les autorisations.
-2. Menu **Guide** › panneau **Équipe** : saisissez l'adresse de chaque membre (Ali, Karim, Nabil, et la vôtre si vous utilisez aussi une adresse @calibraes.com) › **Enregistrer l'équipe**.
-3. Menu **Dates ALGERAC** › vérifiez la date de démarrage (08-11-2026 par défaut).
-
-## Étape 5 — Comptes de l'équipe (chaque membre, 3 min)
-Envoyez-leur le fichier `GUIDE_EQUIPE.md`. Chaque membre :
-1. crée un compte Microsoft gratuit sur **https://signup.live.com** avec **son adresse @calibraes.com** (« utiliser une adresse e-mail existante ») ;
-2. vous communique que c'est fait → vous l'ajoutez au partage du dossier (étape 2.3) et au panneau Équipe (étape 4.2).
-
-## Étape 6 — Tests de validation (10 min, avec un membre)
+## Étape 6 — Tests GATE 1 (10 min, avec Karim)
 | # | Test | Résultat attendu |
 |---|---|---|
-| 1 | Un compte non @calibraes.com se connecte | « Accès refusé » |
-| 2 | Karim passe une tâche à « Démarrer » | Visible chez vous en moins d'une minute |
-| 3 | Karim joint un fichier Word de 10 Mo | Fichier présent dans OneDrive › ALGERAC-Tracker › evidence › n° de tâche |
-| 4 | Vous et Karim modifiez la même tâche en même temps | Les deux modifications sont gardées ou un message « réessayez » ; jamais de perte silencieuse |
-| 5 | Saisir « Réunion de clôture » = 10-06-2027 | P11-01 → 20-06-2027 ; P11-04 → 10-12-2027 |
-| 6 | Ouvrir OneDrive › ALGERAC-Tracker › data | Fichiers `tasks.json`, `audit-AAAA-MM.json` (journal des modifications) |
+| 1 | Un compte hors liste (ex. adresse personnelle créée pour le test) se connecte | « Accès refusé », aucune donnée |
+| 2 | Karim passe une tâche à « Démarrer » | Visible chez vous en moins d'une minute ; ligne dans la table `audit` |
+| 3 | Karim joint un PDF de 10 Mo et un .docx | Fichiers dans Supabase › Storage › evidence › n° de tâche ; vous pouvez les ouvrir |
+| 4 | Vous et Karim modifiez la même tâche en même temps | Le second reçoit « Modifié par … entre-temps » ; aucune perte silencieuse (vérifier `audit`) |
 
-Si le test 2 ou 3 échoue avec « Accès au dossier partagé refusé » : c'est la limite Microsoft identifiée (partage entre comptes personnels). Envoyez-moi le message exact ; l'alternative est prête dans le brief (connexion par code envoyé sur l'adresse @calibraes.com).
+Contrôle : Supabase › **Table Editor** › `docs` (données) et `audit` (journal, non modifiable).
 
 ---
-**Données :** tout est dans OneDrive › ALGERAC-Tracker (`data/*.json` + `evidence/`). Rien n'est stocké sur GitHub. Le bouton **Guide › Télécharger la sauvegarde** produit une copie complète (à ranger chaque semaine dans le dossier CALIBRA).
+**Bon à savoir**
+- Offre gratuite : 500 Mo de base, 1 Go de fichiers, 50 Mo par fichier. Un projet **inactif 7 jours** est mis en pause (données conservées) : un clic sur *Restore project* dans Supabase le relance.
+- **Retirer un utilisateur** : Authentication › Users › … › *Delete user* (ses traces dans le journal restent).
+- **Sauvegarde** : bouton **Guide › Télécharger la sauvegarde** chaque semaine, à ranger dans OneDrive › Calibra › ALGERAC › RWP.

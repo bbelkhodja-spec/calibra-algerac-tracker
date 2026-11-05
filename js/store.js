@@ -1,21 +1,23 @@
 /* Store — couche de données de la plateforme ALGERAC.
- * Même interface que le prototype (collection().onSnapshot, doc().set/delete, collection().add)
+ * Même interface que le prototype (collection().onSnapshot, doc().set/delete, collection().add).
  * Deux modes :
- *   - DEMO : données dans le navigateur (localStorage) — tant que config.clientId est vide.
- *   - LIVE : Microsoft (MSAL) + Microsoft Graph, fichiers JSON dans le dossier OneDrive partagé.
- * Un fichier JSON par collection : data/<collection>.json = { id: document }.
- * Écritures : lecture → modification → écriture avec If-Match (eTag) ; en cas de conflit (412) on relit et on rejoue.
- * Chaque écriture est tracée dans data/audit-AAAA-MM.json (qui, quand, quoi, avant → après).
+ *   - DEMO : données dans le navigateur (localStorage) — tant que supabaseUrl / supabaseKey sont vides.
+ *   - LIVE : Supabase (connexion e-mail + mot de passe, base PostgreSQL protégée par RLS, stockage des preuves).
+ * Une ligne par document : table docs (col, id, data, version, deleted).
+ * Écritures : mise à jour conditionnée à la version connue ; si quelqu'un a modifié entre-temps,
+ *   rien n'est écrasé : la fiche est rechargée et l'utilisateur est prévenu (« Modifié par X entre-temps »).
+ * Journal d'audit : écrit par le serveur (déclencheur SQL) à chaque écriture, non modifiable.
+ * Aucune suppression physique : « supprimer » = deleted:true (+ trace dans le journal).
  */
 (function () {
   const CFG = window.TRACKER_CONFIG || {};
   const COLS = ['tasks', 'jalons', 'evidence', 'comments', 'clauses', 'config'];
-  const SCOPES = ['User.Read', 'Files.ReadWrite.All'];
+  const BUCKET = 'evidence';
   const subs = {};            // col -> [cb]
-  const cache = {};           // col -> {id: doc}
-  const etags = {};           // col -> eTag
-  COLS.forEach(c => { subs[c] = []; cache[c] = {}; });
-  const Store = { mode: CFG.clientId ? 'live' : 'demo', account: null, email: '', lastSync: null, error: null };
+  const cache = {};           // col -> {id: data}   (documents actifs)
+  const meta = {};            // col -> {id: {version, deleted, by}}
+  COLS.forEach(c => { subs[c] = []; cache[c] = {}; meta[c] = {}; });
+  const Store = { mode: (CFG.supabaseUrl && CFG.supabaseKey) ? 'live' : 'demo', email: '', lastSync: null, error: null };
 
   const snap = col => ({
     docs: Object.entries(cache[col] || {}).map(([id, d]) => ({ id, exists: true, data: () => d })),
@@ -37,101 +39,73 @@
     async poll() {}
   };
 
-  /* ---------------- LIVE backend (MSAL + Graph) ---------------- */
-  let pca = null, driveId = null, folderId = null;
-  const G = 'https://graph.microsoft.com/v1.0';
-  async function token() {
-    const req = { scopes: SCOPES, account: Store.account };
-    try { return (await pca.acquireTokenSilent(req)).accessToken; }
-    catch (e) { await pca.acquireTokenRedirect(req); throw e; }
+  /* ---------------- LIVE backend (Supabase) ---------------- */
+  let sb = null;
+  const errMsg = (e, what) => ({ code: (e && (e.code || e.status)) || 'err', message: what + ((e && e.message) ? ' : ' + e.message : '') });
+
+  // Applique une ligne venant du serveur ; renvoie true si le cache a changé.
+  function apply(row) {
+    if (!row || !COLS.includes(row.col)) return false;
+    const m = meta[row.col][row.id];
+    if (m && m.version > row.version) return false;             // ligne plus ancienne que celle connue
+    if (m && m.version === row.version && m.deleted === row.deleted) return false;
+    meta[row.col][row.id] = { version: row.version, deleted: row.deleted, by: row.updated_by };
+    if (row.deleted) delete cache[row.col][row.id]; else cache[row.col][row.id] = row.data;
+    return true;
   }
-  async function gfetch(url, opt = {}) {
-    const t = await token();
-    opt.headers = Object.assign({ Authorization: 'Bearer ' + t }, opt.headers || {});
-    const r = await fetch(url.startsWith('http') ? url : G + url, opt);
-    return r;
-  }
-  const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
-  async function resolveFolder() {
-    if (!CFG.shareUrl) throw { code: 'config', message: 'Lien de partage du dossier (shareUrl) manquant dans config.js.' };
-    const r = await gfetch('/shares/u!' + b64url(CFG.shareUrl) + '/driveItem?$select=id,name,parentReference');
-    if (!r.ok) throw { code: 'share_' + r.status, message: 'Accès au dossier partagé refusé (' + r.status + '). Le dossier ALGERAC-Tracker est-il partagé avec ce compte ?' };
-    const it = await r.json();
-    driveId = it.parentReference.driveId; folderId = it.id;
-  }
-  const pathUrl = p => '/drives/' + driveId + '/items/' + folderId + ':/' + p.split('/').map(encodeURIComponent).join('/') + ':';
-  async function readJson(path) { // -> {data, eTag} | {data:null, eTag:null}
-    const m = await gfetch(pathUrl(path) + '?$select=id,eTag,@microsoft.graph.downloadUrl');
-    if (m.status === 404) return { data: null, eTag: null };
-    if (!m.ok) throw { code: 'read_' + m.status, message: 'Lecture impossible : ' + path };
-    const meta = await m.json();
-    const c = meta['@microsoft.graph.downloadUrl'] ? await fetch(meta['@microsoft.graph.downloadUrl']) : await gfetch(pathUrl(path) + '/content');
-    if (!c.ok) throw { code: 'read_' + c.status, message: 'Lecture impossible : ' + path };
-    return { data: await c.json(), eTag: meta.eTag };
-  }
-  async function writeJson(path, data, eTag) {
-    const headers = { 'Content-Type': 'application/json' };
-    let url = pathUrl(path) + '/content';
-    if (eTag) headers['If-Match'] = eTag; else url += '?@microsoft.graph.conflictBehavior=fail';
-    const r = await gfetch(url, { method: 'PUT', headers, body: JSON.stringify(data, null, 1) });
-    if (r.status === 412 || r.status === 409) return { conflict: true };
-    if (!r.ok) throw { code: 'write_' + r.status, message: 'Écriture refusée (' + r.status + ')' + (r.status === 403 ? ' : ce compte a-t-il le droit « modification » sur le dossier ?' : '') };
-    const j = await r.json(); return { eTag: j.eTag };
-  }
-  async function rmw(path, mutate) { // read-modify-write with retry on conflict
-    for (let i = 0; i < 5; i++) {
-      const cur = await readJson(path);
-      const next = mutate(cur.data);
-      const w = await writeJson(path, next, cur.eTag);
-      if (!w.conflict) return { data: next, eTag: w.eTag };
-      await new Promise(r => setTimeout(r, 300 + Math.random() * 700));
+  async function fetchAll() {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from('docs').select('col,id,data,deleted,version,updated_by').order('col').order('id').range(from, from + 999);
+      if (error) throw errMsg(error, 'Lecture des données impossible');
+      rows.push(...data);
+      if (data.length < 1000) break;
     }
-    throw { code: 'conflict', message: 'Modification simultanée : réessayez.' };
+    return rows;
   }
+  async function conflict(col, id) {
+    const { data } = await sb.from('docs').select('col,id,data,deleted,version,updated_by').eq('col', col).eq('id', id).maybeSingle();
+    if (data) { meta[col][id] = null; apply(data); }
+    emit(col);
+    const who = (data && data.updated_by) || 'un autre utilisateur';
+    throw { code: 'conflict', message: 'Modifié par ' + who + ' entre-temps : la fiche a été rechargée, refaites votre modification.' };
+  }
+
   const live = {
     async load() {
-      await resolveFolder();
-      for (const c of COLS) { const r = await readJson('data/' + c + '.json'); cache[c] = r.data || {}; etags[c] = r.eTag; }
+      const rows = await fetchAll();
+      COLS.forEach(c => { cache[c] = {}; meta[c] = {}; });
+      rows.forEach(apply);
       Store.lastSync = new Date();
     },
     async patch(col, id, value) {
-      let before = null;
-      const res = await rmw('data/' + col + '.json', d => { d = d || {}; before = d[id] || null; if (value === null) delete d[id]; else d[id] = value; return d; });
-      cache[col] = res.data; etags[col] = res.eTag; emit(col);
-      const month = new Date().toISOString().slice(0, 7);
-      try { await rmw('data/audit-' + month + '.json', a => { a = Array.isArray(a) ? a : []; a.push({ at: new Date().toISOString(), email: Store.email, col, id, before, after: value }); return a; }); }
-      catch (e) { console.warn('audit', e); }
+      const m = meta[col][id];
+      let res;
+      if (!m) {
+        if (value === null) return;
+        res = await sb.from('docs').insert({ col, id, data: value }).select('col,id,data,deleted,version,updated_by');
+        if (res.error) { if (res.error.code === '23505') return conflict(col, id); throw errMsg(res.error, 'Écriture refusée'); }
+      } else {
+        const upd = value === null ? { deleted: true } : { data: value, deleted: false };
+        res = await sb.from('docs').update(upd).eq('col', col).eq('id', id).eq('version', m.version).select('col,id,data,deleted,version,updated_by');
+        if (res.error) throw errMsg(res.error, 'Écriture refusée');
+        if (!res.data.length) return conflict(col, id);
+      }
+      apply(res.data[0]); emit(col);
     },
     async upload(taskId, file) {
-      const safe = file.name.replace(/[\\/:*?"<>|#%]/g, '_');
-      const path = 'evidence/' + taskId + '/' + new Date().toISOString().slice(0, 10) + '_' + safe;
-      let item;
-      if (file.size <= 4 * 1024 * 1024) {
-        const r = await gfetch(pathUrl(path) + '/content?@microsoft.graph.conflictBehavior=rename', { method: 'PUT', body: file });
-        if (!r.ok) throw { code: 'upload_' + r.status, message: 'Téléversement refusé (' + r.status + ')' };
-        item = await r.json();
-      } else {
-        const s = await gfetch(pathUrl(path) + '/createUploadSession', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename' } }) });
-        if (!s.ok) throw { code: 'session_' + s.status, message: 'Session de téléversement refusée (' + s.status + ')' };
-        const { uploadUrl } = await s.json();
-        const CH = 320 * 1024 * 10;
-        for (let off = 0; off < file.size; off += CH) {
-          const end = Math.min(off + CH, file.size) - 1;
-          const r = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Range': 'bytes ' + off + '-' + end + '/' + file.size }, body: file.slice(off, end + 1) });
-          if (!r.ok && r.status !== 202) throw { code: 'chunk_' + r.status, message: 'Téléversement interrompu (' + r.status + ')' };
-          if (r.status === 200 || r.status === 201) item = await r.json();
-        }
-      }
-      return { itemId: item.id, webUrl: item.webUrl, name: item.name, size: item.size, path };
+      const clean = file.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-() ]/g, '_');
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
+      const path = taskId + '/' + stamp + '_' + clean;
+      const { error } = await sb.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' });
+      if (error) throw errMsg(error, 'Téléversement refusé');
+      return { itemId: path, webUrl: '', name: file.name, size: file.size, path };
     },
     async poll() {
-      for (const c of COLS) {
-        const m = await gfetch(pathUrl('data/' + c + '.json') + '?$select=eTag');
-        if (m.status === 404) continue;
-        if (!m.ok) continue;
-        const { eTag } = await m.json();
-        if (eTag !== etags[c]) { const r = await readJson('data/' + c + '.json'); cache[c] = r.data || {}; etags[c] = r.eTag; emit(c); }
-      }
+      const rows = await fetchAll();
+      const changed = new Set();
+      rows.forEach(r => { if (apply(r)) changed.add(r.col); });
+      changed.forEach(emit);
       Store.lastSync = new Date();
     }
   };
@@ -145,24 +119,36 @@
     return (CFG.allowDomains || []).some(d => e.endsWith('@' + d.toLowerCase()));
   };
   Store.isAdmin = () => (CFG.admins || []).map(x => x.toLowerCase()).includes(Store.email);
-  Store.signIn = () => pca.loginRedirect({ scopes: SCOPES, prompt: 'select_account' });
-  Store.signOut = () => pca.logoutRedirect({ account: Store.account });
+  Store.signIn = async (email, password) => {
+    const { error } = await sb.auth.signInWithPassword({ email: (email || '').trim(), password: password || '' });
+    if (error) return error.message === 'Invalid login credentials' ? 'Adresse ou mot de passe incorrect.' : error.message;
+    location.reload(); return null;
+  };
+  Store.signOut = async () => { try { await sb.auth.signOut(); } catch (e) {} location.reload(); };
+  Store.changePassword = async password => {
+    const { error } = await sb.auth.updateUser({ password });
+    return error ? error.message : null;
+  };
+  Store.openFile = async path => {
+    const win = window.open('', '_blank');
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 600);
+    if (error) { if (win) win.close(); throw errMsg(error, 'Ouverture impossible'); }
+    if (win) win.location = data.signedUrl; else location.href = data.signedUrl;
+  };
 
   Store.init = async function () {
     if (Store.mode === 'demo') { await demo.load(); return { ok: true }; }
-    pca = new msal.PublicClientApplication({
-      auth: { clientId: CFG.clientId, authority: 'https://login.microsoftonline.com/consumers', redirectUri: location.origin + location.pathname },
-      cache: { cacheLocation: 'localStorage' }
-    });
-    await pca.initialize();
-    const red = await pca.handleRedirectPromise();
-    Store.account = (red && red.account) || pca.getAllAccounts()[0] || null;
-    if (!Store.account) return { ok: false, reason: 'signin' };
-    Store.email = (Store.account.username || '').toLowerCase();
+    sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, reason: 'signin' };
+    Store.email = (session.user.email || '').toLowerCase();
     if (!Store.allowed(Store.email)) return { ok: false, reason: 'denied' };
     try { await live.load(); } catch (e) { Store.error = e; return { ok: false, reason: 'error', error: e }; }
+    sb.channel('docs').on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, p => {
+      if (apply(p.new)) { emit(p.new.col); Store.lastSync = new Date(); emit('_sync'); }
+    }).subscribe();
     setInterval(() => live.poll().then(() => emit('_sync')).catch(e => console.warn(e)), (CFG.pollSeconds || 45) * 1000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) live.poll().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) live.poll().then(() => emit('_sync')).catch(() => {}); });
     return { ok: true };
   };
 
