@@ -163,6 +163,20 @@ const change = (w, el, v) => { el.value = v; el.dispatchEvent(new w.Event('chang
   { const { w, d } = await boot({ live: true, email: 'contact@calibraes.com' });
     ok(w.eval('me') === '' && txt(d).includes('contact@calibraes.com n’est associé'), 'contact@calibraes.com → lecture seule, message explicite'); }
 
+  // 7. Administrateur enregistre l'équipe (adresse d'Ali sans prénom), puis Ali se connecte
+  { const { w, d, db } = await boot({ live: true, email: 'belkhodja.brahim@live.fr', members: { 'karim.x@calibraes.com': 'Karim' } });
+    click(w, d.querySelector('#nav [data-v="guide"]')); await tick();
+    d.getElementById('tm_Ali').value = 'aabdoun@calibraes.com';
+    d.getElementById('tm_Nabil').value = 'nabil.y@calibraes.com';
+    d.getElementById('tm_Brahim').value = 'brahim.z@calibraes.com';
+    click(w, d.getElementById('tmsave')); await tick(100);
+    const M = db.rows.find(r => r.col === 'config').data.members;
+    console.log('   toast:', d.getElementById('toast').textContent, '| base:', JSON.stringify(M));
+    console.log('   champs après:', [...d.querySelectorAll('[id^=tm_]')].map(i => i.id + '=' + i.value).join(' '));
+    ok(M['aabdoun@calibraes.com'] === 'Ali', 'équipe : aabdoun@calibraes.com enregistré pour Ali');
+    const b = await boot({ live: true, email: 'aabdoun@calibraes.com', members: M });
+    ok(b.w.eval('me') === 'Ali' && !b.d.getElementById('main').textContent.includes('lecture seule'), 'Ali (aabdoun@) connecté → identifié Ali, peut modifier'); }
+
   console.log(fails ? '\n' + fails + ' ÉCHEC(S)' : '\nTOUS LES TESTS PASSENT');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(2); });
