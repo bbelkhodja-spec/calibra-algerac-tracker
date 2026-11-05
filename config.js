@@ -5,8 +5,8 @@
 //               Ne JAMAIS mettre ici la clé « service_role » / « secret » ni le mot de passe de la base.
 // Tant que supabaseUrl ou supabaseKey est vide, la plateforme tourne en MODE DÉMO (données locales au navigateur).
 window.TRACKER_CONFIG = {
-  supabaseUrl: "",
-  supabaseKey: "",
+  supabaseUrl: "https://almvihcaavxtksyxahej.supabase.co",
+  supabaseKey: "sb_publishable_uNYZ2umf0-1xG7upz81mUw_hrRTpDPB",
   allowDomains: ["calibraes.com"],
   admins: ["belkhodja.brahim@live.fr"],
   pollSeconds: 45
